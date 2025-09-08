@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="eu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Euskarazko Wikipediaren Mapa</title>
+
+    <!-- Leaflet.js mapen liburutegiaren estilo-orria -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+
+    <!-- Tailwind CSS diseinurako -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Letra-tipoa -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Estilo pertsonalizatuak */
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        #map {
+            height: 100vh;
+            width: 100vw;
+            z-index: 10;
+        }
+        .leaflet-popup-content {
+            font-size: 14px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 8px;
+        }
+        .leaflet-popup-content a {
+            font-weight: 600;
+        }
+        #searchResults, #filterPanel {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        #searchResults::-webkit-scrollbar, .leaflet-popup-content::-webkit-scrollbar, #filterPanel::-webkit-scrollbar {
+            width: 6px;
+        }
+        #searchResults::-webkit-scrollbar-track, .leaflet-popup-content::-webkit-scrollbar-track, #filterPanel::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        #searchResults::-webkit-scrollbar-thumb, .leaflet-popup-content::-webkit-scrollbar-thumb, #filterPanel::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        #searchResults::-webkit-scrollbar-thumb:hover, .leaflet-popup-content::-webkit-scrollbar-thumb:hover, #filterPanel::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .article-tooltip {
+            background-color: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            font-weight: 600;
+            padding: 5px 10px;
+            color: #333;
+        }
+        /* Alboko panelaren estiloak */
+        #filterPanel {
+            transition: transform 0.3s ease-in-out;
+            transform: translateX(-105%);
+        }
+        #filterPanel.open {
+            transform: translateX(0);
+        }
+        .map-button {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .map-button:hover {
+            background-color: #f7fafc;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- Goiburua eta Bilatzailea -->
+    <header class="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 w-auto max-w-[calc(100vw-1rem)] sm:max-w-md">
+        <div class="flex items-center space-x-2">
+            <div class="bg-white bg-opacity-90 backdrop-blur-sm p-3 sm:p-4 shadow-lg rounded-lg flex-grow">
+                <div class="flex items-center mb-2">
+                    <h1 class="text-lg sm:text-xl font-bold text-gray-800">Euskarazko Wikipediaren Mapa</h1>
+                </div>
+                <div class="relative">
+                    <input type="text" id="searchInput" placeholder="Bilatu artikulu bat..." class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div id="searchResults" class="absolute mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-30"></div>
+                </div>
+            </div>
+            <button id="filterButton" class="map-button" aria-label="Iragazkiak">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Maparen kontrol botoiak -->
+    <div class="absolute top-2 right-2 sm:top-4 sm:right-4 z-20 space-y-2">
+        <button id="locateButton" class="map-button" aria-label="Nire kokapena">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        </button>
+        <button id="shareButton" class="map-button" aria-label="Partekatu mapa">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6.012l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.342a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" /></svg>
+        </button>
+    </div>
+
+    <!-- Iragazkien Panela -->
+    <div id="filterPanel" class="absolute top-0 left-0 w-80 bg-white shadow-lg z-30 p-4">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Iragazkiak eta Aukerak</h2>
+            <button id="closeFilterButton" class="text-gray-600 hover:text-gray-900 text-3xl font-bold">&times;</button>
+        </div>
+        <div id="filter-content">
+            <div id="category-filters" class="space-y-1 text-sm text-gray-700">
+                <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Kultura eta Ondarea</p>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q33506"> Museoak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q23413"> Gazteluak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q16970"> Elizak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q12518"> Dorreak eta dorretxeak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q839954"> Arkeologia-guneak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q12280"> Zubiak</label>
+                
+                <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Natura eta Geografia</p>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q8502"> Mendiak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q40080"> Hondartzak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q35524"> Kobazuloak</label>
+            </div>
+        </div>
+        <div class="mt-4 pt-4 border-t border-gray-200 flex space-x-2">
+            <button id="applyFilterButton" class="flex-grow bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Aplikatu</button>
+            <button id="clearFilterButton" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Garbitu</button>
+        </div>
+    </div>
+
+    <!-- Maparen edukiontzia -->
+    <div id="map"></div>
+    
+    <!-- Oharra / Footer -->
+    <footer class="absolute bottom-2 right-2 z-20 bg-white bg-opacity-80 backdrop-blur-sm p-2 rounded-md shadow-md text-xs text-gray-700 text-right max-w-xs">
+        <p>
+            <span class="font-semibold">Beñat Erezuma</span>-k egina, Wikipedia eta OpenStreetMap erabiliz.
+        </p>
+        <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.eu" target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-600 hover:underline">Lizentzia: CC BY-SA 4.0</a>
+    </footer>
+
+    <!-- Maparen gaineko mezuak -->
+    <div id="mapMessage" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-white bg-opacity-90 p-4 rounded-lg shadow-lg text-center">
+        <p id="mapMessageText" class="font-semibold text-gray-700"></p>
+    </div>
+
+    <!-- Kargatzen ari denaren adierazlea -->
+    <div id="loader" class="hidden absolute top-0 left-0 w-full h-full bg-white bg-opacity-70 z-30 flex items-center justify-center">
+        <div class="flex flex-col items-center">
+            <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p id="loader-text" class="mt-4 text-gray-700 font-semibold text-center px-4"></p>
+        </div>
+    </div>
+
+    <!-- Leaflet.js mapen liburutegiaren kodea -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const WIKIPEDIA_API_ENDPOINT = "https://eu.wikipedia.org/w/api.php";
+            const WIKIDATA_API_ENDPOINT = "https://query.wikidata.org/sparql";
+            const WIKIDATA_API_NORMAL_ENDPOINT = "https://www.wikidata.org/w/api.php";
+
+            const loader = document.getElementById('loader');
+            const loaderText = document.getElementById('loader-text');
+            const searchInput = document.getElementById('searchInput');
+            const searchResults = document.getElementById('searchResults');
+            const filterButton = document.getElementById('filterButton');
+            const closeFilterButton = document.getElementById('closeFilterButton');
+            const filterPanel = document.getElementById('filterPanel');
+            const locateButton = document.getElementById('locateButton');
+            const shareButton = document.getElementById('shareButton');
+            const categoryFilters = document.getElementById('category-filters');
+            const applyFilterButton = document.getElementById('applyFilterButton');
+            const clearFilterButton = document.getElementById('clearFilterButton');
+            const mapMessage = document.getElementById('mapMessage');
+            const mapMessageText = document.getElementById('mapMessageText');
+
+            const summaryCache = {};
+            let selectedArticleId = null; 
+            let indirectMarkerInfo = null;
+            const activeCategoryFilters = new Set();
+            const MIN_FILTER_ZOOM = 12;
+            let lastFilterBounds = null;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const lat = urlParams.get('lat') || 43.0;
+            const lon = urlParams.get('lon') || -2.5;
+            const zoom = urlParams.get('zoom') || 9;
+
+            const map = L.map('map').setView([lat, lon], zoom);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            const markersLayer = L.layerGroup().addTo(map);
+            
+            let debounceTimer;
+
+            const showLoader = (text = "Artikuluak kargatzen...") => {
+                loaderText.textContent = text;
+                loader.classList.remove('hidden');
+            };
+            const hideLoader = () => {
+                loader.classList.add('hidden');
+            };
+            const showMapMessage = (text) => {
+                mapMessageText.textContent = text;
+                mapMessage.classList.remove('hidden');
+            };
+            const hideMapMessage = () => {
+                mapMessage.classList.add('hidden');
+            };
+            
+            // =================================================================
+            // === ALDAKETA: Euskal Herriko muga marrazteko funtzio berria ===
+            // =================================================================
+            const drawBasqueCountryBorders = async () => {
+                try {
+                    // ehmuga.json fitxategia kargatu
+                    const response = await fetch('./ehmuga.json');
+                    if (!response.ok) {
+                        console.error('Ezin izan da ehmuga.json fitxategia aurkitu. Ziurtatu karpeta berean dagoela.');
+                        return;
+                    }
+                    const data = await response.json();
+
+                    // Kontuz: GeoJSON formatuak [longitude, latitude] erabiltzen du askotan.
+                    // Leaflet-ek [latitude, longitude] behar du. Aldaketa hau beharrezkoa izan daiteke.
+                    const leafletCoords = data.map(coord => [coord[1], coord[0]]);
+
+                    // Poligonoa sortu eta mapan gehitu, estilo pertsonalizatuarekin
+                    L.polygon(leafletCoords, {
+                        color: '#D50000',      // Ertzaren kolorea (gorria)
+                        weight: 2,             // Ertzaren lodiera
+                        opacity: 0.8,          // Ertzaren opakutasuna
+                        fillColor: '#D50000',   // Barruko kolorea
+                        fillOpacity: 0.1,      // Barruko kolorearen opakutasuna (ia gardena)
+                        interactive: false     // Mugak ez du klikik jasoko
+                    }).addTo(map);
+
+                } catch (error) {
+                    console.error("Errorea Euskal Herriko mugak kargatzean:", error);
+                }
+            };
+            // =================================================================
+            // === ALDAKETAREN AMAIERA ===
+            // =================================================================
+
+            const updateMapData = async () => {
+                hideMapMessage();
+                
+                try {
+                    if (activeCategoryFilters.size > 0) {
+                        if (map.getZoom() < MIN_FILTER_ZOOM) {
+                            markersLayer.clearLayers();
+                            showMapMessage(`Zooma handitu iragazkiaren emaitzak ikusteko.`);
+                            return;
+                        }
+                        
+                        const currentBounds = map.getBounds();
+                        if (lastFilterBounds && lastFilterBounds.contains(currentBounds)) {
+                            return; 
+                        }
+
+                        showLoader("Iragazitako artikuluak kargatzen...");
+                        const articles = await fetchFilteredData();
+                        
+                        markersLayer.clearLayers();
+                        articles.forEach(article => addMarkerToMap(article));
+                        lastFilterBounds = currentBounds.pad(0.2);
+                    } else {
+                        lastFilterBounds = null; 
+                        showLoader("Artikuluak kargatzen...");
+                        const articles = await fetchGeosearchData();
+                        markersLayer.clearLayers();
+                        articles.forEach(article => addMarkerToMap(article));
+                    }
+
+                    if (indirectMarkerInfo) {
+                        addIndirectMarker(indirectMarkerInfo);
+                    }
+                } catch (error) {
+                    console.error("Errorea datuak eskuratzean:", error);
+                    showMapMessage("Errorea gertatu da datuak kargatzean.");
+                } finally {
+                    hideLoader();
+                }
+            };
+
+            const fetchGeosearchData = async () => {
+                const bounds = map.getBounds();
+                const bbox = `${bounds.getNorth()}|${bounds.getWest()}|${bounds.getSouth()}|${bounds.getEast()}`;
+                const params = new URLSearchParams({ action: "query", list: "geosearch", gsbbox: bbox, gslimit: "500", format: "json", origin: "*" });
+                const url = new URL(WIKIPEDIA_API_ENDPOINT);
+                url.search = params.toString();
+                const response = await fetch(url.toString());
+                const data = await response.json();
+                return data.query?.geosearch || [];
+            };
+            
+            const fetchFilteredData = async () => {
+                const bounds = map.getBounds();
+                const categoryValues = Array.from(activeCategoryFilters).map(cat => `wd:${cat}`).join(' ');
+                
+                const sparqlQuery = `
+                    SELECT ?item ?itemLabel ?location ?article WHERE {
+                        VALUES ?category { ${categoryValues} }
+                        ?item wdt:P31/wdt:P279* ?category.
+                        
+                        SERVICE wikibase:box {
+                          ?item wdt:P625 ?location.
+                          bd:serviceParam wikibase:cornerWest "Point(${bounds.getWest()} ${bounds.getSouth()})"^^geo:wktLiteral.
+                          bd:serviceParam wikibase:cornerEast "Point(${bounds.getEast()} ${bounds.getNorth()})"^^geo:wktLiteral.
+                        }
+                        
+                        ?article schema:about ?item;
+                                 schema:inLanguage "eu";
+                                 schema:isPartOf <https://eu.wikipedia.org/>.
+                        SERVICE wikibase:label { bd:serviceParam wikibase:language "eu, en". }
+                    } LIMIT 1000`;
+
+                const url = new URL(WIKIDATA_API_ENDPOINT);
+                url.search = new URLSearchParams({ query: sparqlQuery, format: 'json' }).toString();
+                
+                const response = await fetch(url.toString(), { headers: { 'Accept': 'application/sparql-results+json' } });
+                const data = await response.json();
+                
+                const { pages, redirectsMap, normalizedMap } = await getPageInfoFromSPARQL(data.results.bindings);
+
+                return data.results.bindings.map(item => {
+                    let title = item.itemLabel.value;
+                    const normalized = normalizedMap[title.replace(/ /g, '_')];
+                    if (normalized) title = normalized;
+
+                    const redirected = redirectsMap[title];
+                    if (redirected) title = redirected;
+                    
+                    const page = Object.values(pages).find(p => p.title === title);
+                    if (!page) return null;
+
+                    const coord = item.location.value.match(/Point\(([-\d.]+) ([-\d.]+)\)/);
+                    if (!coord) return null;
+
+                    return {
+                        pageid: page.pageid,
+                        title: title,
+                        lat: parseFloat(coord[2]),
+                        lon: parseFloat(coord[1]),
+                    };
+                }).filter(Boolean);
+            };
+
+            const getPageInfoFromSPARQL = async (bindings) => {
+                const titles = bindings.map(item => item.itemLabel.value);
+                const { pages, redirectsMap, normalizedMap } = await getPageInfo(titles);
+                return { pages, redirectsMap, normalizedMap };
+            }
+
+            const getPageInfo = async (titles, props = '') => {
+                const pages = {};
+                const redirectsMap = {};
+                const normalizedMap = {};
+
+                if (titles.length === 0) return { pages, redirectsMap, normalizedMap };
+                
+                const chunks = [];
+                for (let i = 0; i < titles.length; i += 50) { chunks.push(titles.slice(i, i + 50)); }
+
+                for (const chunk of chunks) {
+                    const params = new URLSearchParams({ action: 'query', titles: chunk.join('|'), redirects: '1', format: 'json', origin: '*' });
+                    if (props) params.set('prop', props);
+                    
+                    const url = new URL(WIKIPEDIA_API_ENDPOINT);
+                    url.search = params.toString();
+                    const response = await fetch(url.toString());
+                    const data = await response.json();
+                    if (data.query) {
+                        if (data.query.pages) Object.assign(pages, data.query.pages);
+                        if (data.query.redirects) data.query.redirects.forEach(r => redirectsMap[r.from] = r.to);
+                        if (data.query.normalized) data.query.normalized.forEach(n => normalizedMap[n.from] = n.to);
+                    }
+                }
+                return { pages, redirectsMap, normalizedMap };
+            }
+
+
+            const addMarkerToMap = (article) => {
+                 const marker = L.marker([article.lat, article.lon]);
+                 marker.bindPopup(createPopupContent(article, 'Laburpena kargatzen...'));
+                 marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
+                 if (article.pageid == selectedArticleId) {
+                     marker.bindTooltip(article.title, { permanent: true, direction: 'top', offset: [0, -10], className: 'article-tooltip' }).openTooltip();
+                     selectedArticleId = null;
+                 }
+                 markersLayer.addLayer(marker);
+            };
+            
+            const addIndirectMarker = (currentIndirectInfo) => {
+                 const marker = L.marker(currentIndirectInfo.coords);
+                 marker.bindTooltip(currentIndirectInfo.title, { permanent: true, direction: 'top', offset: [0, -10], className: 'article-tooltip' }).openTooltip();
+                 const articleForPopup = { pageid: currentIndirectInfo.pageid, title: currentIndirectInfo.title };
+                 marker.bindPopup(createPopupContent(articleForPopup, 'Laburpena kargatzen...', currentIndirectInfo.locTitle));
+                 marker.on('popupopen', () => fetchAndDisplaySummary(articleForPopup, marker, currentIndirectInfo.locTitle));
+                 markersLayer.addLayer(marker);
+            };
+
+            const fetchAndDisplaySummary = async (article, marker, locTitle = null) => {
+                const popup = marker.getPopup();
+                if (summaryCache[article.pageid]) {
+                    popup.setContent(createPopupContent(article, summaryCache[article.pageid], locTitle)); return;
+                }
+                const params = new URLSearchParams({ action: 'query', pageids: article.pageid, prop: 'extracts|pageimages', exintro: 'true', explaintext: 'true', pithumbsize: '200', format: 'json', origin: '*' });
+                try {
+                    const url = new URL(WIKIPEDIA_API_ENDPOINT);
+                    url.search = params.toString();
+                    const response = await fetch(url.toString());
+                    const data = await response.json();
+
+                    if (data && data.query && data.query.pages) {
+                        const page = data.query.pages[article.pageid];
+                        if (page) {
+                            const extract = page.extract || 'Ez da laburpenik aurkitu.';
+                            const imageSrc = page.thumbnail?.source;
+                            summaryCache[article.pageid] = { extract, imageSrc };
+                            popup.setContent(createPopupContent(article, { extract, imageSrc }, locTitle));
+                        } else {
+                            popup.setContent(createPopupContent(article, { extract: "Ezin izan da artikuluaren informazioa aurkitu." }, locTitle));
+                        }
+                    } else {
+                        popup.setContent(createPopupContent(article, { extract: "Errorea informazioa eskuratzean." }, locTitle));
+                    }
+                } catch (error) {
+                    console.error("Ezin izan da laburpena eskuratu:", error);
+                    popup.setContent(createPopupContent(article, { extract: "Errorea laburpena kargatzean." }, locTitle));
+                }
+            };
+            
+            const createPopupContent = (article, summaryData, locTitle = null) => {
+                const summary = typeof summaryData === 'string' ? summaryData : summaryData.extract;
+                const imageSrc = typeof summaryData === 'string' ? null : summaryData.imageSrc;
+                const imageHtml = imageSrc ? `<img src="${imageSrc}" alt="${article.title}" class="w-full h-auto rounded-md my-2">` : '';
+                const locationInfo = locTitle ? `<p class="text-xs italic mt-2 text-gray-500">Erakutsitako kokapena: ${locTitle}</p>` : '';
+                return `${imageHtml}<div class="font-bold text-lg mb-1">${article.title}</div><p class="text-gray-700 text-sm mb-2">${summary}</p><a href="https://eu.wikipedia.org/?curid=${article.pageid}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Artikulua irakurri &rarr;</a>${locationInfo}`;
+            };
+
+            const handleSearch = async (event) => {
+                const query = event.target.value;
+                if (query.length < 3) {
+                    searchResults.innerHTML = ''; searchResults.classList.add('hidden'); return;
+                }
+                const params = new URLSearchParams({ action: 'opensearch', search: query, limit: '5', namespace: '0', format: 'json', origin: '*' });
+                const url = new URL(WIKIPEDIA_API_ENDPOINT);
+                url.search = params.toString();
+                const response = await fetch(url.toString());
+                const data = await response.json();
+                const suggestions = data[1];
+                searchResults.innerHTML = '';
+                if (suggestions.length > 0) {
+                    searchResults.classList.remove('hidden');
+                    suggestions.forEach(title => {
+                        const div = document.createElement('div');
+                        div.className = 'p-2 hover:bg-gray-100 cursor-pointer';
+                        div.textContent = title;
+                        div.onclick = () => selectArticle(title);
+                        searchResults.appendChild(div);
+                    });
+                } else {
+                    searchResults.classList.add('hidden');
+                }
+            };
+
+            const findLocationViaWikidata = async (pageId) => {
+                try {
+                    const pagePropsParams = new URLSearchParams({ action: 'query', pageids: pageId, prop: 'pageprops', format: 'json', origin: '*' });
+                    const pagePropsUrl = new URL(WIKIPEDIA_API_ENDPOINT);
+                    pagePropsUrl.search = pagePropsParams.toString();
+                    const pagePropsResponse = await fetch(pagePropsUrl.toString());
+                    const pagePropsData = await pagePropsResponse.json();
+                    const wikidataId = pagePropsData.query.pages[pageId].pageprops?.wikibase_item;
+                    if (!wikidataId) return null;
+
+                    const locationProperties = ['P19', 'P740', 'P276', 'P131'];
+                    let locationId = null;
+
+                    for (const prop of locationProperties) {
+                        const claimsParams = new URLSearchParams({ action: 'wbgetclaims', entity: wikidataId, property: prop, format: 'json', origin: '*' });
+                        const claimsUrl = new URL(WIKIDATA_API_NORMAL_ENDPOINT);
+                        claimsUrl.search = claimsParams.toString();
+                        const claimsResponse = await fetch(claimsUrl.toString());
+                        const claimsData = await claimsResponse.json();
+                        const claim = claimsData.claims?.[prop]?.[0];
+                        if (claim) {
+                            locationId = claim.mainsnak.datavalue.value.id;
+                            break; 
+                        }
+                    }
+
+                    if (!locationId) return null;
+                    
+                    const entitiesParams = new URLSearchParams({ action: 'wbgetentities', ids: locationId, props: 'claims|labels', languages: 'eu', format: 'json', origin: '*' });
+                    const entitiesUrl = new URL(WIKIDATA_API_NORMAL_ENDPOINT);
+                    entitiesUrl.search = entitiesParams.toString();
+                    const entitiesResponse = await fetch(entitiesUrl.toString());
+                    const entitiesData = await entitiesResponse.json();
+
+                    const locationEntity = entitiesData.entities[locationId];
+                    const coordsClaim = locationEntity.claims.P625?.[0];
+                    const locTitle = locationEntity.labels?.eu?.value || locationId;
+
+                    if (coordsClaim) {
+                        const { latitude, longitude } = coordsClaim.mainsnak.datavalue.value;
+                        return { title: locTitle, coords: { lat: latitude, lon: longitude } };
+                    }
+                } catch (error) {
+                    console.error("Errorea Wikidata kontsultatzean:", error);
+                }
+                return null;
+            };
+
+            const selectArticle = async (title) => {
+                indirectMarkerInfo = null;
+                searchInput.value = title;
+                searchResults.innerHTML = '';
+                searchResults.classList.add('hidden');
+                const params = new URLSearchParams({ action: 'query', titles: title, prop: 'coordinates', format: 'json', origin: '*' });
+                const url = new URL(WIKIPEDIA_API_ENDPOINT);
+                url.search = params.toString();
+                const response = await fetch(url.toString());
+                const data = await response.json();
+                const pages = data.query.pages;
+                const pageId = Object.keys(pages)[0];
+                const page = pages[pageId];
+                if (page.coordinates && page.coordinates.length > 0) {
+                    const coords = page.coordinates[0];
+                    selectedArticleId = page.pageid;
+                    map.flyTo([coords.lat, coords.lon], 18);
+                } else {
+                    showLoader(`'${title}' artikuluaren kokapen garrantzitsuena bilatzen...`);
+                    const location = await findLocationViaWikidata(page.pageid);
+                    if (location) {
+                        const { title: locTitle, coords } = location;
+                        indirectMarkerInfo = { title: title, pageid: page.pageid, coords: [coords.lat + 0.001, coords.lon], locTitle: locTitle };
+                        selectedArticleId = null; 
+                        map.flyTo([coords.lat, coords.lon], 17);
+                    } else {
+                        alert(`Ezin izan da kokapenik aurkitu '${title}' artikuluarentzat.`);
+                    }
+                    hideLoader();
+                }
+            };
+
+            const debouncedUpdate = () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(updateMapData, 500);
+            };
+
+            // Event Listeners
+            map.on('moveend', debouncedUpdate);
+            searchInput.addEventListener('input', handleSearch);
+            document.addEventListener('click', (e) => {
+                if (!searchResults.contains(e.target) && e.target !== searchInput) searchResults.classList.add('hidden');
+            });
+            filterButton.addEventListener('click', () => filterPanel.classList.add('open'));
+            closeFilterButton.addEventListener('click', () => filterPanel.classList.remove('open'));
+            locateButton.addEventListener('click', () => {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => map.flyTo([position.coords.latitude, position.coords.longitude], 17),
+                    () => alert('Ezin izan da zure kokapena eskuratu. Mesedez, egiaztatu baimenak.')
+                );
+            });
+            shareButton.addEventListener('click', () => {
+                const center = map.getCenter();
+                const zoom = map.getZoom();
+                const url = `${window.location.origin}${window.location.pathname}?lat=${center.lat.toFixed(5)}&lon=${center.lng.toFixed(5)}&zoom=${zoom}`;
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('Maparen esteka arbelean kopiatu da!');
+                });
+            });
+            
+            applyFilterButton.addEventListener('click', () => {
+                activeCategoryFilters.clear();
+                categoryFilters.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                    activeCategoryFilters.add(cb.dataset.category);
+                });
+                lastFilterBounds = null;
+                filterPanel.classList.remove('open');
+                updateMapData();
+            });
+
+            clearFilterButton.addEventListener('click', () => {
+                categoryFilters.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                activeCategoryFilters.clear();
+                lastFilterBounds = null;
+                filterPanel.classList.remove('open');
+                updateMapData();
+            });
+
+
+            categoryFilters.addEventListener('change', (event) => {
+                if (event.target.type === 'checkbox') {
+                    const categoryId = event.target.dataset.category;
+                    const isChecked = event.target.checked;
+
+                    if (categoryId === 'eh100' && isChecked) {
+                        categoryFilters.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                            if (cb !== event.target) cb.checked = false;
+                        });
+                    } 
+                    else if (categoryId !== 'eh100' && isChecked) {
+                        const eh100Checkbox = categoryFilters.querySelector('input[data-category="eh100"]');
+                        if (eh100Checkbox) eh100Checkbox.checked = false;
+                    }
+                }
+            });
+
+            // Hasierako datu karga
+            updateMapData();
+            // Euskal Herriko muga kargatu hasieran
+            drawBasqueCountryBorders();
+        });
+    </script>
+
+</body>
+</html>
+
