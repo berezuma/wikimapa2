@@ -56,6 +56,14 @@ run(async () => {
     const shared2 = await loadApp('?artikulua=' + encodeURIComponent('Donostiako Zinemaldia'));
     const title2 = await until(() => shared2.d.querySelector('.leaflet-popup-content h3')?.textContent === 'Donostiako Zinemaldia', 30000);
     check('?artikulua= parametroak popupa irekitzen du', title2);
+
+    // Popupa irekita dagoela iragazki-panela ireki: popupa ixten da eta panela ikusgai (mugikorreko akatsa)
+    const p2 = shared2.d.getElementById('filterPanel');
+    check('panela itxita dagoenean ez da marrazten (visibility)', shared2.w.getComputedStyle(p2).visibility === 'hidden');
+    shared2.d.getElementById('filterButton').click();
+    await sleep(600);
+    check('panela irekitzean popupa ixten da', !shared2.d.querySelector('.leaflet-popup'));
+    check('panela ikusgai, aukerekin', shared2.w.getComputedStyle(p2).visibility === 'visible' && p2.querySelectorAll('#category-filters input').length === 24);
 });
 </script>
 </body>

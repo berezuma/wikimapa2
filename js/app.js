@@ -742,6 +742,9 @@ document.addEventListener('click', (e) => {
 
 // Panela itxita dagoenean "inert" da, Tab teklak bere kontroletara heldu ez dadin
 const openFilterPanel = () => {
+    // Artikuluaren popupa itxi: mugikorrean panelak ia pantaila osoa estaltzen du, eta popupak (bere
+    // geruzekin) panela marraztea eragozten zuen
+    map.closePopup();
     filterPanel.inert = false;
     filterPanel.classList.add('open');
     filterButton.setAttribute('aria-expanded', 'true');
