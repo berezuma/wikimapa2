@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Teklatu proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, sleep, loadApp, key, type } from './harness.js';
+
+run(async () => {
+    // Balio okerrak: lehenetsiak erabili behar dira (zoom 9)
+    const { w, d } = await loadApp('?lat=abc&lon=-2.5&zoom=99');
+    await until(() => d.querySelector('.leaflet-tile'));
+    const tile = d.querySelector('.leaflet-tile')?.src || '';
+    check('URL parametro okerrekin zoom lehenetsia', /\/9\/\d+\/\d+\.png$/.test(tile), tile);
+    check('zoom txikian oharra erakusten da', await until(() => !d.getElementById('mapMessage').classList.contains('hidden')));
+
+    const searchResults = d.getElementById('searchResults');
+    check('emaitzen zerrenda hasieran ezkutuan', searchResults.classList.contains('hidden'));
+
+    const panel = d.getElementById('filterPanel');
+    const filterButton = d.getElementById('filterButton');
+    check('panela itxita dagoenean inert', panel.inert);
+    filterButton.click();
+    await sleep(400);
+    check('panela irekitzean fokua lehen kontrol-laukira', !panel.inert && d.activeElement?.dataset.category === 'Q33506');
+    check('aria-expanded true', filterButton.getAttribute('aria-expanded') === 'true');
+    key(w, d.activeElement, 'Escape');
+    await sleep(400);
+    check('Esc-ek panela ixten du eta fokua itzultzen da', !panel.classList.contains('open') && panel.inert && d.activeElement === filterButton);
+
+    const input = d.getElementById('searchInput');
+    type(w, input, 'Guggenheim');
+    await until(() => searchResults.querySelector('[role=option]'));
+    const options = [...searchResults.querySelectorAll('[role=option]')];
+    check('combobox irekita', input.getAttribute('aria-expanded') === 'true');
+    key(w, input, 'ArrowDown');
+    key(w, input, 'ArrowDown');
+    check('gezi-teklek aukera aktiboa aldatzen dute', input.getAttribute('aria-activedescendant') === options[1].id);
+    key(w, input, 'ArrowUp');
+    key(w, input, 'ArrowUp');
+    check('ArrowUp-ek bukaerara biratzen du', input.getAttribute('aria-activedescendant') === options[options.length - 1].id);
+    key(w, input, 'Escape');
+    check('Esc-ek emaitzak ixten ditu', searchResults.classList.contains('hidden') && input.getAttribute('aria-expanded') === 'false');
+
+    type(w, input, 'Bilbo');
+    await until(() => searchResults.querySelector('[role=option]'));
+    key(w, input, 'Enter');
+    check('Enter-ek lehen emaitza hautatzen du', await until(() => searchResults.classList.contains('hidden') && input.value === 'Bilbo'), input.value);
+});
+</script>
+</body>
+</html>

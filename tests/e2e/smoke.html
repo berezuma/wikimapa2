@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Smoke proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, sleep, loadApp, type } from './harness.js';
+
+run(async () => {
+    const { w, d } = await loadApp('?lat=43.263&lon=-2.935&zoom=15');
+    const markers = () => d.querySelectorAll('.leaflet-marker-icon').length;
+    const message = () => d.getElementById('mapMessage').classList.contains('hidden') ? '' : d.getElementById('mapMessageText').textContent;
+
+    check('markatzaileak kargatzen dira', await until(() => markers() > 0), markers());
+    check('Euskal Herriko muga marrazten da', await until(() => d.querySelector('path[stroke="#D50000"]')));
+
+    // Goiko markatzailearen popupak autoPan eragiten du (moveend); popupak irekita jarraitu behar du
+    const top = [...d.querySelectorAll('.leaflet-marker-icon')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+    top.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    const link = await until(() => d.querySelector('.leaflet-popup-content a'));
+    check('popupak artikuluaren esteka du', link && /curid=\d+/.test(link.href), link?.href);
+    await sleep(3000);
+    check('popupa irekita mapa mugitu ondoren', d.querySelector('.leaflet-popup-content'));
+    check('laburpena kargatu da', !/kargatzen/.test(d.querySelector('.leaflet-popup-content')?.textContent || ''));
+
+    const input = d.getElementById('searchInput');
+    type(w, input, 'Guggenheim');
+    const option = await until(() => [...d.querySelectorAll('#searchResults [role=option]')].find(o => o.textContent === 'Guggenheim Bilbao Museoa'));
+    check('bilaketak emaitzak ematen ditu', option);
+    option?.click();
+    const tooltip = await until(() => d.querySelector('.article-tooltip'));
+    check('hautatutako artikulua nabarmentzen da', tooltip?.textContent === 'Guggenheim Bilbao Museoa', tooltip?.textContent);
+
+    type(w, input, 'Bernardo Atxaga');
+    const person = await until(() => [...d.querySelectorAll('#searchResults [role=option]')].find(o => o.textContent === 'Bernardo Atxaga'));
+    person?.click();
+    const indirect = await until(() => [...d.querySelectorAll('.article-tooltip')].find(t => t.textContent === 'Bernardo Atxaga'));
+    check('koordenaturik gabeko artikulua Wikidataren bidez kokatzen da', indirect);
+    check('aurreko nabarmentzea kendu da', d.querySelectorAll('.article-tooltip').length === 1, d.querySelectorAll('.article-tooltip').length);
+
+    // Kategoria-iragazkia (kobazuloak)
+    d.querySelector('input[data-category="Q35509"]').checked = true;
+    d.getElementById('applyFilterButton').click();
+    await sleep(1000);
+    await until(() => d.getElementById('loader').classList.contains('hidden'), 60000);
+    check('iragazkiak errorerik gabe amaitzen du', !/Errorea/.test(message()), message());
+});
+</script>
+</body>
+</html>
