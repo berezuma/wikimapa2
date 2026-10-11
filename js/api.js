@@ -4,7 +4,7 @@ const WIKIPEDIA_API_ENDPOINT = "https://eu.wikipedia.org/w/api.php";
 const WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
 const WIKIDATA_API_ENDPOINT = "https://www.wikidata.org/w/api.php";
 const WIKIPEDIA_ARTICLE_PREFIX = "https://eu.wikipedia.org/wiki/";
-const WIKIPEDIA_SUMMARY_ENDPOINT = "https://eu.wikipedia.org/api/rest_v1/page/summary/";
+const summaryEndpoint = (lang) => `https://${lang}.wikipedia.org/api/rest_v1/page/summary/`;
 
 // Geosearch-en muga: 10 km-ko erradioa gehienez
 const GEOSEARCH_MAX_RADIUS_M = 10000;
@@ -155,6 +155,17 @@ export const fetchThumbnails = async (titles, signal) => {
 // Aurrez sortutako datuak (npm run build:data)
 export const fetchSubclasses = () => fetchJson('data/kategoriak.json');
 
+// Euskaraz falta diren lekuak (data/falta.json)
+export const fetchMissing = async () => {
+    const data = await fetchJson('data/falta.json');
+    return {
+        generated: data.generated,
+        items: data.items.map(([qid, title, lat, lon, languages, sourceLang, sourceTitle, types = []]) => ({
+            qid, title, lat, lon, languages, sourceLang, sourceTitle, types,
+        })),
+    };
+};
+
 export const fetchOverviewArticles = async () => {
     const data = await fetchJson('data/artikuluak.json');
     return {
@@ -165,9 +176,10 @@ export const fetchOverviewArticles = async () => {
 };
 
 // Laburpena REST APItik: CDN-an cachean dago (action APIa baino azkarragoa). null orria ez badago.
-export const fetchSummary = async (title) => {
+// lang: Wikipediaren hizkuntza (lehenetsia euskara; "Zer falta da" geruzak beste hizkuntzetakoak erabiltzen ditu)
+export const fetchSummary = async (title, lang = 'eu') => {
     try {
-        const data = await fetchJson(WIKIPEDIA_SUMMARY_ENDPOINT + encodeURIComponent(title.replace(/ /g, '_')));
+        const data = await fetchJson(summaryEndpoint(lang) + encodeURIComponent(title.replace(/ /g, '_')));
         return { extract: data.extract || 'Ez da laburpenik aurkitu.', imageSrc: data.thumbnail?.source };
     } catch (error) {
         if (error.status === 404) return null;

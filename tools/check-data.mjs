@@ -60,14 +60,35 @@ if (previousOverview) {
     if (dated < datedBefore * (1 - MAX_DROP)) fail(`datatutako lekuak jaitsi dira: ${datedBefore} → ${dated}`);
 }
 
+// Falta direnak: egitura eta gutxieneko kopurua. Kopurua jaistea ona da (artikuluak idazten dira),
+// baina erdia baino gehiago aste batean jaistea akatsa da ziurrenik
+const missing = await readCurrent('data/falta.json').catch(() => null);
+const previousMissing = readPrevious('data/falta.json');
+if (!missing || !Array.isArray(missing.items)) {
+    fail('data/falta.json falta da edo okerra da');
+} else {
+    if (missing.items.length < 100) fail(`falta direnak gutxiegi: ${missing.items.length}`);
+    if (previousMissing && missing.items.length < previousMissing.items.length * 0.5) {
+        fail(`falta direnak erdira baino gehiago jaitsi dira: ${previousMissing.items.length} → ${missing.items.length}`);
+    }
+    missing.items.slice(0, 50000).forEach((item, i) => {
+        const [qid, name, lat, lon, languages, lang, title, types] = item;
+        if (!/^Q\d+$/.test(qid) || typeof name !== 'string' || !(lat >= south && lat <= north && lon >= west && lon <= east)
+            || !(languages > 0) || typeof lang !== 'string' || typeof title !== 'string' || !Array.isArray(types)) {
+            if (errors.length < 10) fail(`falta-elementu okerra (${i}): ${JSON.stringify(item)}`);
+        }
+    });
+}
+
 // Aldaketak (data kenduta)
 const strip = (data) => data && JSON.stringify({ ...data, generated: undefined });
-const changed = strip(overview) !== strip(previousOverview) || JSON.stringify(categories) !== JSON.stringify(previousCategories);
+const changed = strip(overview) !== strip(previousOverview) || JSON.stringify(categories) !== JSON.stringify(previousCategories)
+    || strip(missing) !== strip(previousMissing);
 const before = previousOverview?.articles.length;
 const titlesBefore = new Set(previousOverview?.articles.map(a => a[0]) || []);
 const added = articles.filter(a => !titlesBefore.has(a[0])).length;
 const removed = before === undefined ? 0 : before - (articles.length - added);
-const summary = `${articles.length} artikulu (+${added}, -${removed}), ${dated} datatu`;
+const summary = `${articles.length} artikulu (+${added}, -${removed}), ${dated} datatu, ${missing?.items?.length ?? 0} falta`;
 
 console.log(errors.length ? `AKATSAK:\n- ${errors.join('\n- ')}` : 'Datuak zuzenak.');
 console.log(`${summary}; ${changed ? 'aldaketak daude' : 'aldaketarik ez'}.`);

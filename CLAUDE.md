@@ -12,7 +12,7 @@ Static single-page map of geolocated Basque Wikipedia (eu.wikipedia.org) article
 python3 -m http.server 8000   # serve locally: http://localhost:8000/?lat=43.26&lon=-2.93&zoom=14
 npm install                   # once, only needed for the CSS build
 npm run build:css             # regenerate css/tailwind.css (Tailwind 3.4.17)
-npm run build:data            # regenerate data/*.json from Wikidata (takes a few minutes)
+npm run build:data            # regenerate data/*.json from Wikidata (takes ~15 min); `node tools/build-data.mjs falta` for one file
 npm run check:data            # validate data/*.json against the committed version (git HEAD)
 npm test                      # unit tests for js/api.js (node:test, fetch mocked, offline)
 npm run test:e2e              # browser tests in headless Chrome against the live APIs (needs network)
@@ -38,6 +38,7 @@ ES modules and the `ehmuga.json` fetch require HTTP, so opening via `file://` do
   - Pull before working on `data/`, because the bot may have committed.
   The UI shows the data date (`.data-date`).
   - `kategoriak.json` maps each filter Q-id to all of its subclass Q-numbers (P279*). Filter categories come from the `data-category` attributes in `index.html`, which may hold several space-separated Q-ids. **After adding or changing a category checkbox, run `npm run build:data`.**
+  - `falta.json` ("Zer falta da" layer) lists places inside the border polygon (point-in-polygon, not just the bbox) that have an article in some Wikipedia but not in Basque. Each entry is `[qid, name, lat, lon, languageCount, sourceLang, sourceTitle, types]`. Name is the eu label when there is one. Events (subclasses of Q1190554) are excluded; that subclass check uses `hint:gearing "forward"`, without which it times out. `sourceLang` is the first available of `SOURCE_LANGUAGES`, which must match `TRANSLATABLE_LANGUAGES` in `app.js`. Popups for those languages link to Content Translation; others (ceb, ro… bot stubs) get "Sortu euskaraz" instead. Unlike articles, a drop in this count is good (people wrote the articles), so `check-data` only fails if it halves or falls under 100.
   - `artikuluak.json` holds every geotagged eu-wiki article in the border's bbox plus a margin, as `[title, lat, lon, types?, year?]`. Types are P31 Q-numbers. Year is the earliest of P571/P1619/P580/P1249; years below -10000 (geological) are dropped. The file powers the zoomed-out overview, all category filtering inside that bbox, and the timeline.
 - Markers are keyed by **article title** everywhere: geosearch, SPARQL sitelinks, static data, popups (`/wiki/<title>` links) and `summaryCache`. They live in a `L.markerClusterGroup` (Leaflet.markercluster 1.5.3 from cdnjs, SRI-pinned; clustering stops at zoom 17), and `renderArticles` adds and removes them in batches.
 - Data sources (in `js/api.js`), all called directly from the browser with `origin=*`:
@@ -60,6 +61,7 @@ ES modules and the `ehmuga.json` fetch require HTTP, so opening via `file://` do
 - The intro (counter card, border-drawing animation and marker fade-in) runs only on the first visit without URL params and without reduced motion. The `localStorage` key `wikimapa-sarrera-ikusita` records that it ran. E2E runs use fresh profiles, so `delight.html` sees it.
 - Don't `pkill -f` or `pgrep -f` with a pattern that also appears in your own command line: it kills the shell running the command. Stop a test server by its port (`ss -ltnp`) instead.
 - The timeline (`timelineIndex !== null`) renders only dated articles from `artikuluak.json` with year ≤ the selected year, combined with any active category filters, and only inside the bbox. The slider indexes the sorted `timelineYears` array (quantile scale, not a linear year scale). It auto-plays on open, in about 12 s.
+- The missing-articles layer (`missingLayer`, its own pink `markerClusterGroup`) is toggled by `#missingCheckbox` or `?falta=1`. Active category filters apply to it too: `renderMissing` rebuilds it when the filter set changes.
 - Category checkboxes apply on `change` (there is no apply button). Active filters show as chips under the search box and as a count on the filter button. Panel counts are per current view and come from the static data.
 - A search selection, or `?artikulua=<title>` on load, opens that article's popup once its marker is on the map (`pendingPopupTitle`). The share button adds `artikulua` while a popup is open.
 - Accessibility: the search box is an ARIA combobox (arrow keys, Enter, Escape via `handleSearchKeydown`). The filter panel is `inert` while closed; open and close it only through `openFilterPanel`/`closeFilterPanel`, which handle focus and `aria-expanded`. URL params are range-checked by `numberParam`.

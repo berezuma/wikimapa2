@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    fetchJson, searchArticles, fetchThumbnails, fetchSummary, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
+    fetchJson, searchArticles, fetchThumbnails, fetchSummary, fetchMissing, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
     fetchPage, findLocationViaWikidata
 } from '../../js/api.js';
 
@@ -163,6 +163,20 @@ test('fetchSummary: REST APIa; 404 bada null', async () => {
     assert.deepEqual(await fetchSummary('Bilboko Guggenheim'), { extract: 'Bilbo hiria da.', imageSrc: 'https://x/b.jpg' });
     assert.equal(calls[0].pathname, '/api/rest_v1/page/summary/Bilboko_Guggenheim');
     assert.equal(await fetchSummary('Ez dago'), null);
+});
+
+test('fetchSummary: beste hizkuntza bateko Wikipedia', async () => {
+    const calls = mockFetch(() => ({ extract: 'Una iglesia.' }));
+    assert.deepEqual(await fetchSummary('Iglesia de San Juan', 'es'), { extract: 'Una iglesia.', imageSrc: undefined });
+    assert.equal(calls[0].hostname, 'es.wikipedia.org');
+});
+
+test('fetchMissing: elementuak objektu bihurtzen ditu', async () => {
+    mockFetch(() => ({ generated: '2026-10-11', items: [['Q1', 'Ermita', 43.1, -2.2, 3, 'es', 'Ermita de San Juan', [56750657]]] }));
+    assert.deepEqual(await fetchMissing(), {
+        generated: '2026-10-11',
+        items: [{ qid: 'Q1', title: 'Ermita', lat: 43.1, lon: -2.2, languages: 3, sourceLang: 'es', sourceTitle: 'Ermita de San Juan', types: [56750657] }],
+    });
 });
 
 test('fetchPage: orria ez badago null', async () => {

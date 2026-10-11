@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Zer falta da proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, sleep, loadApp, setCategories } from './harness.js';
+
+const countMissing = (d) => [...d.querySelectorAll('.wm-missing, .wm-missing-cluster')]
+    .reduce((sum, icon) => sum + (icon.classList.contains('wm-missing-cluster') ? Number(icon.textContent.replace(/\./g, '')) || 0 : 1), 0);
+
+run(async () => {
+    const { w, d } = await loadApp('?lat=43.0&lon=-2.0&zoom=9');
+    await until(() => d.querySelector('.marker-cluster'));
+    check('hasieran ez dago falta-markatzailerik', countMissing(d) === 0);
+
+    d.getElementById('filterButton').click();
+    const total = await until(() => d.getElementById('missingTotal').textContent);
+    check('panelean falta direnen guztizkoa', /^\(\d{1,3}(\.\d{3})*\)$/.test(total || ''), total);
+
+    const box = d.getElementById('missingCheckbox');
+    box.checked = true;
+    box.dispatchEvent(new w.Event('change', { bubbles: true }));
+    await until(() => countMissing(d) > 0, 20000);
+    await sleep(1000);
+    const all = countMissing(d);
+    check('geruza aktibatzean falta direnak agertzen dira', all > 500, all);
+    check('legendan "Euskaraz falta da"', !d.querySelector('.wm-legend-missing').classList.contains('hidden'));
+
+    // Kategoria-iragazkia falta direnei ere aplikatzen zaie
+    setCategories(d, 'Q16970');
+    await sleep(1500);
+    const churches = countMissing(d);
+    check('iragazkia falta direnei ere (elizak)', churches > 0 && churches < all, `${churches} < ${all}`);
+    setCategories(d);
+    await sleep(1500);
+
+    // Txartela: falta den leku bat zoom handian
+    const near = await loadApp('?lat=43.0&lon=-2.0&zoom=9&falta=1');
+    await until(() => near.d.querySelector('.wm-missing-cluster'), 20000);
+    check('?falta=1 parametroak geruza aktibatzen du', near.d.getElementById('missingCheckbox').checked);
+    near.d.querySelector('.wm-missing-cluster').dispatchEvent(new near.w.MouseEvent('click', { bubbles: true }));
+    const marker = await until(() => near.d.querySelector('.wm-missing'), 20000);
+    marker?.dispatchEvent(new near.w.MouseEvent('click', { bubbles: true }));
+    const badge = await until(() => near.d.querySelector('.leaflet-popup-content .article-card span')?.textContent);
+    check('txartelak "Ez dago euskaraz" dio', badge === 'Ez dago euskaraz', badge);
+    const primary = near.d.querySelector('.leaflet-popup-content a.article-read');
+    check('itzultzeko edo sortzeko botoia', /ContentTranslation|action=edit/.test(primary?.href || ''), primary?.textContent);
+    check('Wikidata esteka', [...near.d.querySelectorAll('.leaflet-popup-content a')].some(a => /wikidata\.org\/wiki\/Q\d+/.test(a.href)));
+});
+</script>
+</body>
+</html>

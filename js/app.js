@@ -2,7 +2,7 @@
 import {
     fetchJson, isAbortError, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories,
     fetchSubclasses, fetchOverviewArticles, fetchSummary, searchArticles, fetchPage, findLocationViaWikidata,
-    fetchThumbnails
+    fetchThumbnails, fetchMissing
 } from './api.js';
 
 const BORDER_DATA_URL = "ehmuga.json";
@@ -28,6 +28,7 @@ const clearFilterButton = document.getElementById('clearFilterButton');
 const filterCount = document.getElementById('filterCount');
 const activeFiltersBox = document.getElementById('activeFilters');
 const categoryCountsNote = document.getElementById('categoryCountsNote');
+const missingCheckbox = document.getElementById('missingCheckbox');
 const mapMessage = document.getElementById('mapMessage');
 const mapMessageText = document.getElementById('mapMessageText');
 
@@ -796,6 +797,7 @@ shareButton.addEventListener('click', () => {
     const zoom = map.getZoom();
     const params = new URLSearchParams({ lat: center.lat.toFixed(5), lon: center.lng.toFixed(5), zoom: String(zoom) });
     if (openArticleTitle) params.set('artikulua', openArticleTitle);
+    if (missingCheckbox.checked) params.set('falta', '1');
     const url = `${window.location.origin}${window.location.pathname}?${params}`;
     if (!navigator.clipboard) {
         showMapMessage(url, 8000);
@@ -862,7 +864,10 @@ const applyFilters = () => {
     categoryInputs().filter(input => input.checked).forEach(input => activeCategoryFilters.add(input.dataset.category));
     renderActiveFilters();
     clearTimeout(filterDebounceTimer);
-    filterDebounceTimer = setTimeout(updateMapData, 150);
+    filterDebounceTimer = setTimeout(() => {
+        updateMapData();
+        if (missingCheckbox.checked) renderMissing();
+    }, 150);
 };
 
 categoryFilters.addEventListener('change', (event) => {
@@ -1005,9 +1010,140 @@ legend.onAdd = () => {
             row.append(createElement('span', `wm-swatch wm-${group}`), label);
             box.appendChild(row);
         });
+    // "Zer falta da" geruza aktibo dagoenean bakarrik
+    const missingRow = createElement('div', 'wm-legend-missing hidden');
+    missingRow.append(createElement('span', 'wm-swatch wm-falta'), 'Euskaraz falta da');
+    box.appendChild(missingRow);
     return box;
 };
 legend.addTo(map);
+
+// --- Zer falta da: Euskal Herriko lekuak, Wikipediaren beste hizkuntzaren batean artikulua dutenak baina
+// euskaraz ez (data/falta.json, astero eguneratua). Geruza bereizia, bere multzoekin; kategoria-iragazkiak
+// hemen ere aplikatzen dira.
+const LANGUAGE_NAMES = {
+    es: 'gaztelaniaz', fr: 'frantsesez', en: 'ingelesez', ca: 'katalanez', gl: 'galizieraz', it: 'italieraz',
+    de: 'alemanez', pt: 'portugesez', oc: 'okzitanieraz', an: 'aragoieraz', ceb: 'zebuanoz', ro: 'errumanieraz', ru: 'errusieraz',
+};
+const languageName = (lang) => LANGUAGE_NAMES[lang] || `${lang} hizkuntzan`;
+// Itzultzeko iturri onak (tools/build-data.mjs-eko SOURCE_LANGUAGES bera). Beste hizkuntzetakoak (zebuanoa,
+// errumaniera...) bot-zirriborroak izan ohi dira: "Sortu euskaraz" eskaintzen da, ez itzulpena.
+const TRANSLATABLE_LANGUAGES = new Set(['es', 'fr', 'en', 'ca', 'gl', 'it', 'de', 'pt', 'oc', 'an']);
+const isTranslatable = (item) => TRANSLATABLE_LANGUAGES.has(item.sourceLang);
+
+const missingIcon = L.divIcon({ className: 'wm-missing', iconSize: [22, 22], popupAnchor: [0, -8] });
+const missingLayer = L.markerClusterGroup({
+    chunkedLoading: true,
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    disableClusteringAtZoom: 17,
+    iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount();
+        const size = count < 10 ? 30 : count < 100 ? 36 : 44;
+        return L.divIcon({ html: formatNumber(count), className: 'marker-cluster wm-cluster wm-missing-cluster', iconSize: [size, size] });
+    },
+});
+let missingPromise = null;
+let renderedMissingKey = null;
+const loadMissing = () => {
+    missingPromise ??= fetchMissing().catch((error) => { missingPromise = null; throw error; });
+    return missingPromise;
+};
+
+const wikipediaUrl = (lang, title) => `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+const linkButton = (className, text, href) => {
+    const link = createElement('a', className, text);
+    link.href = href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    return link;
+};
+
+const createMissingPopup = (item, summary) => {
+    const container = createElement('div', 'article-card');
+    container.appendChild(createElement('span', 'inline-block rounded-full bg-pink-100 text-pink-800 px-2 py-0.5 text-xs font-semibold', 'Ez dago euskaraz'));
+    container.appendChild(createElement('h3', 'mt-1 text-base font-bold text-gray-900 leading-snug pr-4', item.title));
+    container.appendChild(createElement('p', 'text-xs text-gray-500 mt-0.5',
+        `Wikipedian ${item.languages} hizkuntzatan dago` + (isTranslatable(item) ? ` · Laburpena ${languageName(item.sourceLang)}` : ` (${languageName(item.sourceLang)}, bot-artikulua)`)));
+
+    if (isTranslatable(item)) {
+        const body = createElement('div', 'flex gap-3 mt-2');
+        if (summary?.imageSrc) {
+            const image = createElement('img', 'w-16 h-16 object-cover rounded-md shrink-0 bg-gray-100');
+            image.src = summary.imageSrc;
+            image.alt = '';
+            body.appendChild(image);
+        }
+        body.appendChild(summary
+            ? createElement('p', 'text-sm text-gray-700 leading-relaxed line-clamp-4 m-0', summary.extract)
+            : createElement('p', 'text-sm text-gray-400 m-0', 'Laburpena kargatzen…'));
+        container.appendChild(body);
+    }
+
+    const actions = createElement('div', 'flex flex-wrap gap-2 mt-3');
+    if (isTranslatable(item)) {
+        const params = new URLSearchParams({ page: item.sourceTitle, from: item.sourceLang, to: 'eu', targettitle: item.title });
+        actions.appendChild(linkButton('article-read inline-flex items-center rounded-md bg-pink-700 px-3 py-1.5 text-sm font-semibold hover:bg-pink-800',
+            'Itzuli euskarara →', `https://eu.wikipedia.org/wiki/Special:ContentTranslation?${params}`));
+    } else {
+        actions.appendChild(linkButton('article-read inline-flex items-center rounded-md bg-pink-700 px-3 py-1.5 text-sm font-semibold hover:bg-pink-800',
+            'Sortu euskaraz →', `https://eu.wikipedia.org/w/index.php?${new URLSearchParams({ title: item.title, action: 'edit' })}`));
+    }
+    actions.appendChild(linkButton('article-secondary inline-flex items-center rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold hover:bg-gray-50',
+        `Irakurri ${languageName(item.sourceLang)}`, wikipediaUrl(item.sourceLang, item.sourceTitle)));
+    actions.appendChild(linkButton('article-secondary inline-flex items-center rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold hover:bg-gray-50',
+        'Wikidata', `https://www.wikidata.org/wiki/${item.qid}`));
+    container.appendChild(actions);
+    return container;
+};
+
+const createMissingMarker = (item) => {
+    const marker = L.marker([item.lat, item.lon], { icon: missingIcon, title: `${item.title} (ez dago euskaraz)` });
+    marker.bindPopup(() => createMissingPopup(item, null), POPUP_OPTIONS);
+    marker.on('popupopen', async () => {
+        if (!isTranslatable(item)) return;
+        try {
+            const summary = await fetchSummary(item.sourceTitle, item.sourceLang);
+            if (summary && marker.isPopupOpen()) marker.getPopup().setContent(createMissingPopup(item, summary));
+        } catch (error) {
+            console.error("Ezin izan da laburpena eskuratu:", error);
+        }
+    });
+    return marker;
+};
+
+// Geruza erakutsi/ezkutatu; iragazkiak aldatzean markatzaileak berriz sortu
+const renderMissing = async () => {
+    document.querySelector('.wm-legend-missing')?.classList.toggle('hidden', !missingCheckbox.checked);
+    if (!missingCheckbox.checked) {
+        map.removeLayer(missingLayer);
+        return;
+    }
+    try {
+        const [{ items }, subclasses] = await Promise.all([loadMissing(), loadSubclasses()]);
+        const key = [...activeCategoryFilters].sort().join('|');
+        if (key !== renderedMissingKey) {
+            const list = activeCategoryFilters.size > 0 ? filterByCategories(items, [...activeCategoryFilters], subclasses) : items;
+            missingLayer.clearLayers();
+            missingLayer.addLayers(list.map(createMissingMarker));
+            renderedMissingKey = key;
+        }
+        if (missingCheckbox.checked) map.addLayer(missingLayer);
+    } catch (error) {
+        console.error("Errorea falta direnak kargatzean:", error);
+        showMapMessage('Errorea gertatu da falta diren artikuluak kargatzean.', 3000);
+    }
+};
+
+missingCheckbox.addEventListener('change', renderMissing);
+// Panelean guztizkoa erakutsi (fitxategi txikia; panela irekitzean kargatzen da)
+filterButton.addEventListener('click', () => {
+    loadMissing().then(({ items }) => { document.getElementById('missingTotal').textContent = `(${formatNumber(items.length)})`; }).catch(() => {});
+});
+if (urlParams.get('falta') === '1') {
+    missingCheckbox.checked = true;
+    renderMissing();
+}
 
 // Muga marrazten den animazioa (SVG trazuaren luzera), gero betegarria
 const animateBorder = (border) => {
