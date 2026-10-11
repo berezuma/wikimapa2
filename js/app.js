@@ -133,15 +133,14 @@ const showFilteredArticles = (articles, subclasses) => {
     if (filtered.length === 0) showMapMessage("Ez dago iragazkiarekin bat datorren artikulurik ikuspegi honetan.", 4000);
 };
 
+// Bista orokorreko datuek mapa-erdigunea estaltzen duten
+const overviewCovers = (overview, center) => {
+    const { south, west, north, east } = overview.bounds;
+    return L.latLngBounds([south, west], [north, east]).contains(center);
+};
+
 const updateMapData = async () => {
     const filtering = activeCategoryFilters.size > 0;
-
-    if (filtering && map.getZoom() < MIN_FILTER_ZOOM) {
-        updateController?.abort();
-        renderArticles([]);
-        showMapMessage(`Zooma handitu iragazkiaren emaitzak ikusteko.`);
-        return;
-    }
 
     // Aurreko eskaera bertan behera utzi, erantzun zaharrek berriak gainidatz ez ditzaten
     updateController?.abort();
@@ -150,7 +149,18 @@ const updateMapData = async () => {
     hideMapMessage();
 
     try {
-        if (filtering) {
+        if (filtering && map.getZoom() < MIN_FILTER_ZOOM) {
+            // Zoom txikian, bista orokorreko datuekin iragazi (motak barne daude): Wikidatari eskatu gabe
+            showLoader("Iragazitako artikuluak kargatzen...");
+            const [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
+            if (updateController !== controller) return;
+            if (overviewCovers(overview, map.getCenter())) {
+                showFilteredArticles(overview.articles, subclasses);
+            } else {
+                renderArticles([]);
+                showMapMessage(`Zooma handitu iragazkiaren emaitzak ikusteko.`);
+            }
+        } else if (filtering) {
             if (areaCache && areaCache.bounds.contains(map.getBounds())) {
                 showFilteredArticles(areaCache.articles, await loadSubclasses());
                 return;
@@ -197,11 +207,8 @@ const fetchGeosearchData = async (signal) => {
             console.error("Errorea bista orokorra kargatzean:", error);
             return null;
         });
-        if (overview) {
-            const { south, west, north, east } = overview.bounds;
-            if (L.latLngBounds([south, west], [north, east]).contains(center)) {
-                return { articles: overview.articles, partial: false };
-            }
+        if (overview && overviewCovers(overview, center)) {
+            return { articles: overview.articles, partial: false };
         }
         return { articles: await geosearchAround({ lat: center.lat, lon: center.lng }, signal), partial: true };
     };

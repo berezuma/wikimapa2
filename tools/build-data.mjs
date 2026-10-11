@@ -2,7 +2,8 @@
 //  - data/kategoriak.json: iragazki bakoitzeko Q-id-aren azpiklase guztiak (P279*), zenbaki gisa.
 //    Kategoriak index.html-eko data-category atributuetatik irakurtzen dira.
 //  - data/artikuluak.json: Euskal Herriko eremuko (ehmuga.json + marjina) euskarazko artikulu
-//    geolokalizatu guztiak, [izenburua, lat, lon] gisa, bista orokorrerako.
+//    geolokalizatu guztiak, [izenburua, lat, lon, motak?] gisa (motak: P31 Q-zenbakiak), bista
+//    orokorrerako eta zoom txikiko iragazkietarako.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -61,25 +62,33 @@ const buildArticles = async () => {
             const w = west + ((east - west) * j) / TILES;
             const e = west + ((east - west) * (j + 1)) / TILES;
             const rows = await sparql(`
-                SELECT ?location ?article WHERE {
+                SELECT ?location ?article ?type WHERE {
                     SERVICE wikibase:box {
                         ?item wdt:P625 ?location.
                         bd:serviceParam wikibase:cornerWest "Point(${w} ${s})"^^geo:wktLiteral.
                         bd:serviceParam wikibase:cornerEast "Point(${e} ${n})"^^geo:wktLiteral.
                     }
                     ?article schema:about ?item; schema:isPartOf <https://eu.wikipedia.org/>.
+                    OPTIONAL { ?item wdt:P31 ?type. }
                 }`);
             rows.forEach(row => {
                 const title = decodeURIComponent(row.article.value.slice(ARTICLE_PREFIX.length)).replace(/_/g, ' ');
                 const coord = row.location.value.match(/Point\(([-\d.eE]+) ([-\d.eE]+)\)/);
-                if (coord && !articles.has(title)) articles.set(title, [title, round(parseFloat(coord[2])), round(parseFloat(coord[1]))]);
+                if (!coord) return;
+                if (!articles.has(title)) articles.set(title, [title, round(parseFloat(coord[2])), round(parseFloat(coord[1])), []]);
+                const types = articles.get(title)[3];
+                const type = row.type ? qidNumber(row.type.value) : 0;
+                if (type && !types.includes(type)) types.push(type);
             });
             console.log(`  zatia ${i * TILES + j + 1}/${TILES * TILES}: ${rows.length} errenkada (guztira ${articles.size})`);
         }
     }
     return {
         bounds: { south, west, north, east },
-        articles: [...articles.values()].sort((a, b) => a[0].localeCompare(b[0])),
+        // Motarik gabeko artikuluek 3 elementu besterik ez dute (fitxategia txikiagoa)
+        articles: [...articles.values()]
+            .map(article => (article[3].length ? article : article.slice(0, 3)))
+            .sort((a, b) => a[0].localeCompare(b[0])),
     };
 };
 

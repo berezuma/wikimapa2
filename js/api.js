@@ -39,19 +39,23 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
     signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
 });
 
-// Geosearch CirrusSearch-ek egiten du, eta erabiltzaileko aldibereko bilaketak mugatzen ditu.
+// Geosearch eta opensearch CirrusSearch-ek egiten ditu, eta erabiltzaileko aldibereko bilaketak mugatzen ditu.
 // Bertan behera utzitako eskaerek zerbitzarian jarraitzen dute, beraz hurrengoak "too busy" jaso dezake.
-const geosearch = async (params, signal) => {
+const searchApi = async (params, signal) => {
     const retryDelays = [700, 1500];
     for (let attempt = 0; ; attempt++) {
         try {
-            const data = await wikipediaApi({ action: "query", list: "geosearch", gslimit: "500", ...params }, signal);
-            return data.query?.geosearch || [];
+            return await wikipediaApi(params, signal);
         } catch (error) {
             if (error.code !== 'cirrussearch-too-busy-error' || attempt >= retryDelays.length) throw error;
             await sleep(retryDelays[attempt], signal);
         }
     }
+};
+
+const geosearch = async (params, signal) => {
+    const data = await searchApi({ action: "query", list: "geosearch", gslimit: "500", ...params }, signal);
+    return data.query?.geosearch || [];
 };
 
 // bounds: { north, south, east, west }
@@ -120,7 +124,7 @@ export const fetchOverviewArticles = async () => {
     const data = await fetchJson('data/artikuluak.json');
     return {
         bounds: data.bounds,
-        articles: data.articles.map(([title, lat, lon]) => ({ title, lat, lon })),
+        articles: data.articles.map(([title, lat, lon, types = []]) => ({ title, lat, lon, types })),
     };
 };
 
@@ -132,7 +136,7 @@ export const fetchSummary = async (title) => {
 };
 
 export const searchTitles = async (query, signal) => {
-    const data = await wikipediaApi({ action: 'opensearch', search: query, limit: '5', namespace: '0' }, signal);
+    const data = await searchApi({ action: 'opensearch', search: query, limit: '5', namespace: '0' }, signal);
     return data[1] || [];
 };
 

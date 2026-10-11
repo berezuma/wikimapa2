@@ -2,7 +2,8 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    fetchJson, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchPage, findLocationViaWikidata
+    fetchJson, searchTitles, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
+    fetchPage, findLocationViaWikidata
 } from '../../js/api.js';
 
 const realFetch = globalThis.fetch;
@@ -12,7 +13,7 @@ afterEach(() => { globalThis.fetch = realFetch; });
 const mockFetch = (handler) => {
     const calls = [];
     globalThis.fetch = async (input, options = {}) => {
-        const url = new URL(input);
+        const url = new URL(input, 'http://localhost/');
         calls.push(url);
         const body = await handler(url, options);
         const status = body?.__status || 200;
@@ -60,6 +61,15 @@ test('geosearch: cirrussearch-too-busy-error jasotzean berriz saiatzen da', asyn
     assert.deepEqual(result, [{ pageid: 7 }]);
 });
 
+test('searchTitles: cirrussearch-too-busy-error jasotzean berriz saiatzen da', async () => {
+    let n = 0;
+    const calls = mockFetch(() => (++n === 1
+        ? { error: { code: 'cirrussearch-too-busy-error', info: 'busy' } }
+        : ['Bilb', ['Bilbo', 'Bilboko itsasadarra'], [], []]));
+    assert.deepEqual(await searchTitles('Bilb'), ['Bilbo', 'Bilboko itsasadarra']);
+    assert.equal(calls.length, 2);
+});
+
 test('geosearch: beste erroreekin ez da berriz saiatzen', async () => {
     const calls = mockFetch(() => ({ error: { code: 'toobig', info: 'too big' } }));
     await assert.rejects(geosearchBox({ north: 44, south: 42, east: -1, west: -4 }), (error) => error.code === 'toobig');
@@ -105,6 +115,18 @@ test('filterByCategories: azpiklaseak eta Q-id anitzeko kategoriak', () => {
     assert.deepEqual(filterByCategories(articles, ['Q33506'], subclasses).map(a => a.title), ['Museoa', 'Arte museoa']);
     assert.deepEqual(filterByCategories(articles, ['Q16970', 'Q23397 Q131681'], subclasses).map(a => a.title), ['Katedrala', 'Urtegia']);
     assert.deepEqual(filterByCategories(articles, ['Q999'], subclasses), []);
+});
+
+test('fetchOverviewArticles: motak aukerakoak dira', async () => {
+    const bounds = { south: 42, west: -4, north: 44, east: -1 };
+    mockFetch(() => ({ generated: '2026-10-11', bounds, articles: [['Bilbo', 43.26, -2.93, [515]], ['Ibaia', 43.1, -2.5]] }));
+    assert.deepEqual(await fetchOverviewArticles(), {
+        bounds,
+        articles: [
+            { title: 'Bilbo', lat: 43.26, lon: -2.93, types: [515] },
+            { title: 'Ibaia', lat: 43.1, lon: -2.5, types: [] },
+        ],
+    });
 });
 
 test('fetchPage: orria ez badago null', async () => {

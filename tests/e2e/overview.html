@@ -20,6 +20,16 @@ run(async () => {
     check('Euskal Herri osoko milaka artikulu', total > 5000, total);
     check('ez da "erdiko 10 km" oharra agertzen', !/10 km/.test(message()), message());
 
+    // Iragazkiak zoom txikian ere funtzionatzen du (bista orokorreko datuekin, sarerik gabe)
+    d.querySelector('input[data-category="Q33506"]').checked = true;
+    d.getElementById('applyFilterButton').click();
+    await sleep(500);
+    await until(() => d.getElementById('loader').classList.contains('hidden'));
+    await sleep(1000);
+    const museums = countArticles(d);
+    check('museoen iragazkia zoom 9an', museums > 50 && museums < total, `${museums} museo`);
+    check('ez da "Zooma handitu" oharra agertzen', !/Zooma handitu/.test(message()), message());
+
     // Datu estatikoen eremutik kanpo (Madril): erdiko zirkulua eta oharra
     const outside = await loadApp('?lat=40.4168&lon=-3.7038&zoom=9');
     const outsideMessage = await until(() => !outside.d.getElementById('mapMessage').classList.contains('hidden') && outside.d.getElementById('mapMessageText').textContent);
