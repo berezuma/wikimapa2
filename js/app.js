@@ -70,6 +70,11 @@ const markersLayer = L.markerClusterGroup({
     showCoverageOnHover: false,
     maxClusterRadius: 50,
     disableClusteringAtZoom: 17,
+    iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount();
+        const size = count < 10 ? 30 : count < 100 ? 36 : count < 1000 ? 44 : 52;
+        return L.divIcon({ html: formatNumber(count), className: 'marker-cluster wm-cluster', iconSize: [size, size] });
+    },
 }).addTo(map);
 const indirectLayer = L.layerGroup().addTo(map);
 const locationLayer = L.layerGroup().addTo(map);
@@ -121,7 +126,7 @@ const drawBasqueCountryBorders = async () => {
                 weight: 2,
                 opacity: 0.8,
                 fillColor: '#D50000',
-                fillOpacity: 0.1,
+                fillOpacity: 0.04,
                 interactive: false
             }).addTo(map);
         }
@@ -313,8 +318,46 @@ const trackPopup = (marker, title) => {
 
 const POPUP_OPTIONS = { maxWidth: 320, minWidth: 260, className: 'article-popup' };
 
+// Markatzaileen kolorea taldearen arabera (iragazki-paneleko taldeak: kultura, natura, herriak; bestela besteak).
+// Artikuluaren motak datu estatikoetatik datoz (izenburuz), geosearch-ek ez baititu ematen.
+const GROUPS = ['kultura', 'natura', 'herriak', 'besteak'];
+const markerIcons = Object.fromEntries(GROUPS.map(group => [group, L.divIcon({
+    className: `wm-marker wm-${group}`, iconSize: [20, 20], popupAnchor: [0, -7], tooltipAnchor: [0, -5],
+})]));
+let groupTypes = null; // [[taldea, Set(motak)], ...]
+let typesByTitle = null;
+
+const articleGroup = (article) => {
+    const types = article.types?.length ? article.types : typesByTitle?.get(article.title);
+    if (!types || !groupTypes) return 'besteak';
+    const match = groupTypes.find(([, typeSet]) => types.some(type => typeSet.has(type)));
+    return match ? match[0] : 'besteak';
+};
+
+// Taldeen datuak kargatu (atzeko planoan) eta dauden markatzaileak koloreztatu
+const loadMarkerGroups = async () => {
+    try {
+        const [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
+        typesByTitle = new Map(overview.articles.map(article => [article.title, article.types]));
+        groupTypes = [...categoryFilters.querySelectorAll('.category-group')].map(heading => {
+            const typeSet = new Set();
+            let next = heading.nextElementSibling;
+            while (next && !next.classList.contains('category-group')) {
+                const input = next.querySelector('input[data-category]');
+                if (input) input.dataset.category.split(/\s+/).forEach(qid => (subclasses[qid] || []).forEach(type => typeSet.add(type)));
+                next = next.nextElementSibling;
+            }
+            return [heading.dataset.group, typeSet];
+        });
+        markersByTitle.forEach(marker => marker.setIcon(markerIcons[articleGroup(marker.article)]));
+    } catch (error) {
+        console.error("Errorea markatzaileen taldeak kargatzean:", error);
+    }
+};
+
 const createMarker = (article) => {
-    const marker = L.marker([article.lat, article.lon]);
+    const marker = L.marker([article.lat, article.lon], { icon: markerIcons[articleGroup(article)] });
+    marker.article = article;
     // Edukia popupa irekitzean sortzen da (bista orokorrak milaka markatzaile ditu)
     marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || null), POPUP_OPTIONS);
     marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
@@ -324,7 +367,7 @@ const createMarker = (article) => {
 
 const showIndirectMarker = (info) => {
     indirectLayer.clearLayers();
-    const marker = L.marker(info.coords);
+    const marker = L.marker(info.coords, { icon: markerIcons[articleGroup({ title: info.title })] });
     marker.bindTooltip(info.title, { permanent: true, direction: 'top', offset: [0, -10], className: 'article-tooltip' }).openTooltip();
     const articleForPopup = { title: info.title };
     marker.bindPopup(() => createPopupContent(articleForPopup, summaryCache[info.title] || null, info.locTitle), POPUP_OPTIONS);
@@ -673,8 +716,23 @@ clearFilterButton.addEventListener('click', () => {
 
 map.on('moveend', updateCategoryCounts);
 
+// Legenda (ordenagailuan; mugikorrean iragazki-paneleko izenburuek erakusten dituzte koloreak)
+const legend = L.control({ position: 'bottomleft' });
+legend.onAdd = () => {
+    const box = createElement('div', 'wm-legend');
+    [['kultura', 'Kultura eta ondarea'], ['natura', 'Natura eta geografia'], ['herriak', 'Herriak eta azpiegiturak'], ['besteak', 'Besteak']]
+        .forEach(([group, label]) => {
+            const row = createElement('div');
+            row.append(createElement('span', `wm-swatch wm-${group}`), label);
+            box.appendChild(row);
+        });
+    return box;
+};
+legend.addTo(map);
+
 // Hasierako datu karga; ?artikulua=… badago, artikulu hori hautatu
 updateMapData();
+loadMarkerGroups();
 if (urlParams.get('artikulua')) selectArticle(urlParams.get('artikulua'));
 // Euskal Herriko muga kargatu hasieran
 drawBasqueCountryBorders();

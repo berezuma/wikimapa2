@@ -8,7 +8,7 @@ import { run, check, until, sleep, loadApp, setCategories } from './harness.js';
 
 // Multzoen zenbakiak + banakako markatzaileak
 const countArticles = (d) => [...d.querySelectorAll('.leaflet-marker-icon')]
-    .reduce((sum, icon) => sum + (icon.classList.contains('marker-cluster') ? Number(icon.textContent) || 0 : 1), 0);
+    .reduce((sum, icon) => sum + (icon.classList.contains('marker-cluster') ? Number(icon.textContent.replace(/\./g, '')) || 0 : 1), 0);
 
 run(async () => {
     const { d } = await loadApp('?lat=43.0&lon=-2.0&zoom=9');
