@@ -31,10 +31,17 @@ let lastFilterBounds = null;
 // Ikuspegia handiagoa bada, erdiko zirkulua kontsultatzen da.
 const GEOSEARCH_MAX_AREA_KM2 = 350;
 
+// URLko parametroa zenbaki baliozkoa bada eta tartean badago, bera; bestela lehenetsia
+const numberParam = (params, name, min, max, fallback) => {
+    const raw = params.get(name);
+    const value = raw === null || raw.trim() === '' ? NaN : Number(raw);
+    return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+};
+
 const urlParams = new URLSearchParams(window.location.search);
-const lat = urlParams.get('lat') || 43.0;
-const lon = urlParams.get('lon') || -2.5;
-const zoom = urlParams.get('zoom') || 9;
+const lat = numberParam(urlParams, 'lat', -90, 90, 43.0);
+const lon = numberParam(urlParams, 'lon', -180, 180, -2.5);
+const zoom = Math.round(numberParam(urlParams, 'zoom', 0, 19, 9));
 
 const map = L.map('map').setView([lat, lon], zoom);
 
@@ -277,6 +284,48 @@ const createPopupContent = (article, summaryData, locTitle = null) => {
 const hideSearchResults = () => {
     searchResults.innerHTML = '';
     searchResults.classList.add('hidden');
+    searchInput.setAttribute('aria-expanded', 'false');
+    searchInput.removeAttribute('aria-activedescendant');
+    activeResultIndex = -1;
+};
+
+// Teklatuz nabigatzeko: gezi-teklekin hautatutako emaitza
+let activeResultIndex = -1;
+const resultItems = () => [...searchResults.querySelectorAll('[role="option"]')];
+
+const setActiveResult = (index) => {
+    const items = resultItems();
+    items.forEach((item, i) => {
+        const active = i === index;
+        item.classList.toggle('bg-gray-100', active);
+        item.setAttribute('aria-selected', String(active));
+    });
+    activeResultIndex = index;
+    if (items[index]) {
+        searchInput.setAttribute('aria-activedescendant', items[index].id);
+        items[index].scrollIntoView({ block: 'nearest' });
+    } else {
+        searchInput.removeAttribute('aria-activedescendant');
+    }
+};
+
+const handleSearchKeydown = (event) => {
+    const items = resultItems();
+    if (event.key === 'Escape') {
+        hideSearchResults();
+        return;
+    }
+    if (items.length === 0) return;
+    if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveResult((activeResultIndex + 1) % items.length);
+    } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveResult(activeResultIndex <= 0 ? items.length - 1 : activeResultIndex - 1);
+    } else if (event.key === 'Enter') {
+        event.preventDefault();
+        selectArticle(items[Math.max(activeResultIndex, 0)].textContent);
+    }
 };
 
 const handleSearch = async () => {
@@ -292,8 +341,12 @@ const handleSearch = async () => {
         hideSearchResults();
         if (suggestions.length > 0) {
             searchResults.classList.remove('hidden');
-            suggestions.forEach(title => {
+            searchInput.setAttribute('aria-expanded', 'true');
+            suggestions.forEach((title, i) => {
                 const div = createElement('div', 'p-2 hover:bg-gray-100 cursor-pointer', title);
+                div.id = `searchResult-${i}`;
+                div.setAttribute('role', 'option');
+                div.setAttribute('aria-selected', 'false');
                 div.onclick = () => selectArticle(title);
                 searchResults.appendChild(div);
             });
@@ -359,11 +412,31 @@ const debouncedUpdate = () => {
 // Event Listeners
 map.on('moveend', debouncedUpdate);
 searchInput.addEventListener('input', debouncedSearch);
+searchInput.addEventListener('keydown', handleSearchKeydown);
 document.addEventListener('click', (e) => {
-    if (!searchResults.contains(e.target) && e.target !== searchInput) searchResults.classList.add('hidden');
+    if (!searchResults.contains(e.target) && e.target !== searchInput) hideSearchResults();
 });
-filterButton.addEventListener('click', () => filterPanel.classList.add('open'));
-closeFilterButton.addEventListener('click', () => filterPanel.classList.remove('open'));
+
+// Panela itxita dagoenean "inert" da, Tab teklak bere kontroletara heldu ez dadin
+const openFilterPanel = () => {
+    filterPanel.inert = false;
+    filterPanel.classList.add('open');
+    filterButton.setAttribute('aria-expanded', 'true');
+    categoryFilters.querySelector('input')?.focus();
+};
+const closeFilterPanel = () => {
+    const hadFocus = filterPanel.contains(document.activeElement);
+    filterPanel.classList.remove('open');
+    filterPanel.inert = true;
+    filterButton.setAttribute('aria-expanded', 'false');
+    if (hadFocus) filterButton.focus();
+};
+
+filterButton.addEventListener('click', openFilterPanel);
+closeFilterButton.addEventListener('click', closeFilterPanel);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && filterPanel.classList.contains('open')) closeFilterPanel();
+});
 locateButton.addEventListener('click', () => {
     if (!navigator.geolocation) {
         showMapMessage('Nabigatzaile honek ez du kokapena eskuratzeko aukerarik.', 4000);
@@ -393,7 +466,7 @@ applyFilterButton.addEventListener('click', () => {
         activeCategoryFilters.add(cb.dataset.category);
     });
     lastFilterBounds = null;
-    filterPanel.classList.remove('open');
+    closeFilterPanel();
     updateMapData();
 });
 
@@ -401,25 +474,8 @@ clearFilterButton.addEventListener('click', () => {
     categoryFilters.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
     activeCategoryFilters.clear();
     lastFilterBounds = null;
-    filterPanel.classList.remove('open');
+    closeFilterPanel();
     updateMapData();
-});
-
-categoryFilters.addEventListener('change', (event) => {
-    if (event.target.type === 'checkbox') {
-        const categoryId = event.target.dataset.category;
-        const isChecked = event.target.checked;
-
-        if (categoryId === 'eh100' && isChecked) {
-            categoryFilters.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                if (cb !== event.target) cb.checked = false;
-            });
-        }
-        else if (categoryId !== 'eh100' && isChecked) {
-            const eh100Checkbox = categoryFilters.querySelector('input[data-category="eh100"]');
-            if (eh100Checkbox) eh100Checkbox.checked = false;
-        }
-    }
 });
 
 // Hasierako datu karga
