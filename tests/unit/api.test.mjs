@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    fetchJson, searchTitles, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
+    fetchJson, searchArticles, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
     fetchPage, findLocationViaWikidata
 } from '../../js/api.js';
 
@@ -61,13 +61,20 @@ test('geosearch: cirrussearch-too-busy-error jasotzean berriz saiatzen da', asyn
     assert.deepEqual(result, [{ pageid: 7 }]);
 });
 
-test('searchTitles: cirrussearch-too-busy-error jasotzean berriz saiatzen da', async () => {
+test('searchArticles: index ordenan, deskribapen eta irudiarekin; too busy berriz saiatu', async () => {
     let n = 0;
     const calls = mockFetch(() => (++n === 1
         ? { error: { code: 'cirrussearch-too-busy-error', info: 'busy' } }
-        : ['Bilb', ['Bilbo', 'Bilboko itsasadarra'], [], []]));
-    assert.deepEqual(await searchTitles('Bilb'), ['Bilbo', 'Bilboko itsasadarra']);
+        : { query: { pages: {
+            '2': { title: 'Bilboko itsasadarra', index: 2 },
+            '1': { title: 'Bilbo', index: 1, description: 'Bizkaiko hiriburua', thumbnail: { source: 'https://x/b.jpg' }, coordinates: [{ lat: 43.26, lon: -2.93 }] },
+        } } }));
+    assert.deepEqual(await searchArticles('Bilb'), [
+        { title: 'Bilbo', description: 'Bizkaiko hiriburua', thumbnail: 'https://x/b.jpg', hasCoords: true },
+        { title: 'Bilboko itsasadarra', description: '', thumbnail: null, hasCoords: false },
+    ]);
     assert.equal(calls.length, 2);
+    assert.equal(calls[1].searchParams.get('gpssearch'), 'Bilb');
 });
 
 test('geosearch: beste erroreekin ez da berriz saiatzen', async () => {

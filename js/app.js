@@ -1,7 +1,7 @@
 // Mapa, markatzaileak eta interfazea. Datuak api.js-tik datoz.
 import {
     fetchJson, isAbortError, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories,
-    fetchSubclasses, fetchOverviewArticles, fetchSummary, searchTitles, fetchPage, findLocationViaWikidata
+    fetchSubclasses, fetchOverviewArticles, fetchSummary, searchArticles, fetchPage, findLocationViaWikidata
 } from './api.js';
 
 const BORDER_DATA_URL = "ehmuga.json";
@@ -60,9 +60,8 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 // Egilea eta lizentzia Leaflet-en aitortzan (lehen oin batek OSM-ren aitortza estaltzen zuen)
 map.attributionControl.setPrefix(
-    'Beñat Erezumak egina · <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.eu" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a> · ' +
-    '<a href="https://eu.wikipedia.org" target="_blank" rel="noopener noreferrer">Wikipedia</a> · ' +
-    '<a href="https://leafletjs.com" target="_blank" rel="noopener noreferrer">Leaflet</a>'
+    'Beñat Erezuma · <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.eu" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a> · ' +
+    '<a href="https://eu.wikipedia.org" target="_blank" rel="noopener noreferrer">Wikipedia</a>'
 );
 
 // Markatzaileak multzokatuta; zoom 17tik aurrera banan-banan
@@ -73,6 +72,7 @@ const markersLayer = L.markerClusterGroup({
     disableClusteringAtZoom: 17,
 }).addTo(map);
 const indirectLayer = L.layerGroup().addTo(map);
+const locationLayer = L.layerGroup().addTo(map);
 // izenburua -> markatzailea; mapa mugitzean dauden markatzaileak mantentzeko
 const markersByTitle = new Map();
 let highlightedMarker = null;
@@ -248,6 +248,20 @@ const highlightMarker = (marker, title) => {
     highlightedMarker = marker;
 };
 
+// Hautatutako artikuluaren popupa ireki, markatzailea mapan badago (multzo batean ez)
+const openPopupFor = (title) => {
+    const marker = markersByTitle.get(title);
+    if (marker && map.hasLayer(marker)) {
+        marker.openPopup();
+        return true;
+    }
+    return false;
+};
+let pendingPopupTitle = null;
+map.on('moveend', () => {
+    if (pendingPopupTitle && openPopupFor(pendingPopupTitle)) pendingPopupTitle = null;
+});
+
 const clearHighlight = () => {
     if (highlightedMarker) highlightedMarker.unbindTooltip();
     highlightedMarker = null;
@@ -281,15 +295,30 @@ const renderArticles = (articles) => {
 
     if (selectedTitle !== null && markersByTitle.has(selectedTitle)) {
         highlightMarker(markersByTitle.get(selectedTitle), selectedTitle);
+        if (pendingPopupTitle === selectedTitle && openPopupFor(selectedTitle)) pendingPopupTitle = null;
         selectedTitle = null;
     }
 };
 
+// Partekatzeko esteka: popupa irekita duen artikulua
+let openArticleTitle = null;
+const trackPopup = (marker, title) => {
+    // Popupa irekita dagoenean tooltip-a ezkutatu (biak markatzailearen gainean daude)
+    marker.on('popupopen', () => { openArticleTitle = title; marker.closeTooltip(); });
+    marker.on('popupclose', () => {
+        if (openArticleTitle === title) openArticleTitle = null;
+        if (marker.getTooltip()) marker.openTooltip();
+    });
+};
+
+const POPUP_OPTIONS = { maxWidth: 320, minWidth: 260, className: 'article-popup' };
+
 const createMarker = (article) => {
     const marker = L.marker([article.lat, article.lon]);
     // Edukia popupa irekitzean sortzen da (bista orokorrak milaka markatzaile ditu)
-    marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || 'Laburpena kargatzen...'));
+    marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || null), POPUP_OPTIONS);
     marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
+    trackPopup(marker, article.title);
     return marker;
 };
 
@@ -298,9 +327,11 @@ const showIndirectMarker = (info) => {
     const marker = L.marker(info.coords);
     marker.bindTooltip(info.title, { permanent: true, direction: 'top', offset: [0, -10], className: 'article-tooltip' }).openTooltip();
     const articleForPopup = { title: info.title };
-    marker.bindPopup(createPopupContent(articleForPopup, 'Laburpena kargatzen...', info.locTitle));
+    marker.bindPopup(() => createPopupContent(articleForPopup, summaryCache[info.title] || null, info.locTitle), POPUP_OPTIONS);
     marker.on('popupopen', () => fetchAndDisplaySummary(articleForPopup, marker, info.locTitle));
+    trackPopup(marker, info.title);
     indirectLayer.addLayer(marker);
+    return marker;
 };
 
 const fetchAndDisplaySummary = async (article, marker, locTitle = null) => {
@@ -329,30 +360,35 @@ const createElement = (tag, className, text) => {
     return element;
 };
 
+// Popup txartela: izenburua, irudi txikia alboan, laburpen moztua eta Wikipediarako botoia.
+// summaryData: null (kargatzen), { extract, imageSrc } edo errore-testua { extract }.
 // DOM nodoak erabiltzen dira (ez HTML katerik), Wikipediako testuak HTML gisa interpreta ez daitezen
 const createPopupContent = (article, summaryData, locTitle = null) => {
-    const summary = typeof summaryData === 'string' ? summaryData : summaryData.extract;
-    const imageSrc = typeof summaryData === 'string' ? null : summaryData.imageSrc;
-    const container = document.createElement('div');
-
-    if (imageSrc) {
-        const image = createElement('img', 'w-full h-auto rounded-md my-2');
-        image.src = imageSrc;
-        image.alt = article.title;
-        container.appendChild(image);
+    const container = createElement('div', 'article-card');
+    container.appendChild(createElement('h3', 'text-base font-bold text-gray-900 leading-snug pr-4', article.title));
+    if (locTitle) {
+        container.appendChild(createElement('p', 'text-xs text-gray-500 mt-0.5', `Kokapen erlazionatua: ${locTitle}`));
     }
-    container.appendChild(createElement('div', 'font-bold text-lg mb-1', article.title));
-    container.appendChild(createElement('p', 'text-gray-700 text-sm mb-2', summary));
 
-    const link = createElement('a', 'text-blue-600 hover:underline', 'Artikulua irakurri →');
+    const body = createElement('div', 'flex gap-3 mt-2');
+    if (summaryData?.imageSrc) {
+        const image = createElement('img', 'w-20 h-20 object-cover rounded-md shrink-0 bg-gray-100');
+        image.src = summaryData.imageSrc;
+        image.alt = '';
+        body.appendChild(image);
+    }
+    if (summaryData) {
+        body.appendChild(createElement('p', 'text-sm text-gray-700 leading-relaxed line-clamp-5 m-0', summaryData.extract));
+    } else {
+        body.appendChild(createElement('p', 'text-sm text-gray-400 m-0', 'Laburpena kargatzen…'));
+    }
+    container.appendChild(body);
+
+    const link = createElement('a', 'article-read inline-flex items-center gap-1 mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold hover:bg-blue-700', 'Irakurri Wikipedian →');
     link.href = `https://eu.wikipedia.org/wiki/${encodeURIComponent(article.title.replace(/ /g, '_'))}`;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     container.appendChild(link);
-
-    if (locTitle) {
-        container.appendChild(createElement('p', 'text-xs italic mt-2 text-gray-500', `Erakutsitako kokapena: ${locTitle}`));
-    }
     return container;
 };
 
@@ -399,7 +435,7 @@ const handleSearchKeydown = (event) => {
         setActiveResult(activeResultIndex <= 0 ? items.length - 1 : activeResultIndex - 1);
     } else if (event.key === 'Enter') {
         event.preventDefault();
-        selectArticle(items[Math.max(activeResultIndex, 0)].textContent);
+        selectArticle(items[Math.max(activeResultIndex, 0)].dataset.title);
     }
 };
 
@@ -412,25 +448,47 @@ const handleSearch = async () => {
     const controller = new AbortController();
     searchController = controller;
     try {
-        const suggestions = await searchTitles(query, controller.signal);
+        const results = await searchArticles(query, controller.signal);
         hideSearchResults();
-        if (suggestions.length > 0) {
+        if (results.length > 0) {
             searchResults.classList.remove('hidden');
             searchInput.setAttribute('aria-expanded', 'true');
-            suggestions.forEach((title, i) => {
-                const div = createElement('div', 'p-2 hover:bg-gray-100 cursor-pointer', title);
-                div.id = `searchResult-${i}`;
-                div.setAttribute('role', 'option');
-                div.setAttribute('aria-selected', 'false');
-                div.onclick = () => selectArticle(title);
-                searchResults.appendChild(div);
-            });
+            results.forEach((result, i) => searchResults.appendChild(createSearchResult(result, i)));
+        } else {
+            searchResults.classList.remove('hidden');
+            searchResults.appendChild(createElement('div', 'p-3 text-sm text-gray-500', 'Ez da artikulurik aurkitu.'));
         }
     } catch (error) {
         if (isAbortError(error)) return;
         console.error("Errorea bilaketan:", error);
         hideSearchResults();
     }
+};
+
+// Emaitza bakoitza: irudi txikia, izenburua eta deskribapena. Koordenaturik ez badu, lotutako lekua erakutsiko da.
+const createSearchResult = (result, index) => {
+    const option = createElement('div', 'flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer');
+    option.id = `searchResult-${index}`;
+    option.dataset.title = result.title;
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', 'false');
+
+    if (result.thumbnail) {
+        const image = createElement('img', 'w-10 h-10 object-cover rounded shrink-0 bg-gray-100');
+        image.src = result.thumbnail;
+        image.alt = '';
+        option.appendChild(image);
+    } else {
+        option.appendChild(createElement('div', 'w-10 h-10 rounded shrink-0 bg-gray-100'));
+    }
+    const text = createElement('div', 'min-w-0');
+    text.appendChild(createElement('div', 'text-sm font-medium text-gray-900 truncate', result.title));
+    const details = [result.description, result.hasCoords ? '' : 'kokapen erlazionatua'].filter(Boolean).join(' · ');
+    if (details) text.appendChild(createElement('div', 'text-xs text-gray-500 truncate', details));
+    option.appendChild(text);
+
+    option.onclick = () => selectArticle(result.title);
+    return option;
 };
 
 const debouncedSearch = () => {
@@ -440,6 +498,7 @@ const debouncedSearch = () => {
 
 const selectArticle = async (title) => {
     searchController?.abort();
+    pendingPopupTitle = null;
     indirectLayer.clearLayers();
     clearHighlight();
     searchInput.value = title;
@@ -452,6 +511,8 @@ const selectArticle = async (title) => {
         }
         if (page.coords) {
             selectedTitle = page.title;
+            // Popupa iristean irekiko da (moveend edo markatzailea sortzean)
+            pendingPopupTitle = page.title;
             // Markatzailea dagoeneko mapan badago, berehala nabarmendu
             const existing = markersByTitle.get(page.title);
             if (existing) {
@@ -466,7 +527,8 @@ const selectArticle = async (title) => {
             if (location) {
                 const { title: locTitle, coords } = location;
                 selectedTitle = null;
-                showIndirectMarker({ title: page.title, coords: [coords.lat + 0.001, coords.lon], locTitle: locTitle });
+                const marker = showIndirectMarker({ title: page.title, coords: [coords.lat + 0.001, coords.lon], locTitle: locTitle });
+                map.once('moveend', () => marker.openPopup());
                 map.flyTo([coords.lat, coords.lon], 17);
             } else {
                 showMapMessage(`Ezin izan da kokapenik aurkitu '${title}' artikuluarentzat.`, 4000);
@@ -519,22 +581,35 @@ locateButton.addEventListener('click', () => {
         return;
     }
     navigator.geolocation.getCurrentPosition(
-        (position) => map.flyTo([position.coords.latitude, position.coords.longitude], 17),
+        (position) => {
+            const latlng = [position.coords.latitude, position.coords.longitude];
+            locationLayer.clearLayers();
+            L.circle(latlng, { radius: position.coords.accuracy, color: '#2563eb', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(locationLayer);
+            L.circleMarker(latlng, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 })
+                .bindTooltip('Zu hemen zaude', { direction: 'top', offset: [0, -8] })
+                .addTo(locationLayer);
+            map.flyTo(latlng, 17);
+        },
         () => showMapMessage('Ezin izan da zure kokapena eskuratu. Mesedez, egiaztatu baimenak.', 4000)
     );
 });
 shareButton.addEventListener('click', () => {
     const center = map.getCenter();
     const zoom = map.getZoom();
-    const url = `${window.location.origin}${window.location.pathname}?lat=${center.lat.toFixed(5)}&lon=${center.lng.toFixed(5)}&zoom=${zoom}`;
+    const params = new URLSearchParams({ lat: center.lat.toFixed(5), lon: center.lng.toFixed(5), zoom: String(zoom) });
+    if (openArticleTitle) params.set('artikulua', openArticleTitle);
+    const url = `${window.location.origin}${window.location.pathname}?${params}`;
     if (!navigator.clipboard) {
         showMapMessage(url, 8000);
         return;
     }
     navigator.clipboard.writeText(url)
-        .then(() => showMapMessage('Maparen esteka arbelean kopiatu da!', 3000))
+        .then(() => showMapMessage(openArticleTitle ? `'${openArticleTitle}' artikuluaren esteka kopiatu da!` : 'Maparen esteka arbelean kopiatu da!', 3000))
         .catch(() => showMapMessage(url, 8000));
 });
+
+// Milakoak puntuz (1.109), euskarazko idazkeraren arabera
+const formatNumber = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
 const categoryInputs = () => [...categoryFilters.querySelectorAll('input[type="checkbox"]')];
 const categoryLabel = (input) => input.parentElement.querySelector('span').textContent.trim();
@@ -573,7 +648,7 @@ const updateCategoryCounts = async () => {
     const visible = covered ? overview.articles.filter(article => bounds.contains([article.lat, article.lon])) : [];
     categoryInputs().forEach(input => {
         const count = input.parentElement.querySelector('.category-count');
-        count.textContent = covered ? filterByCategories(visible, [input.dataset.category], subclasses).length.toLocaleString('eu') : '';
+        count.textContent = covered ? formatNumber(filterByCategories(visible, [input.dataset.category], subclasses).length) : '';
     });
     categoryCountsNote.classList.toggle('hidden', !covered);
 };
@@ -598,7 +673,8 @@ clearFilterButton.addEventListener('click', () => {
 
 map.on('moveend', updateCategoryCounts);
 
-// Hasierako datu karga
+// Hasierako datu karga; ?artikulua=… badago, artikulu hori hautatu
 updateMapData();
+if (urlParams.get('artikulua')) selectArticle(urlParams.get('artikulua'));
 // Euskal Herriko muga kargatu hasieran
 drawBasqueCountryBorders();

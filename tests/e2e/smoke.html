@@ -26,20 +26,36 @@ run(async () => {
     check('laburpena kargatu da', !/kargatzen/.test(d.querySelector('.leaflet-popup-content')?.textContent || ''));
 
     const input = d.getElementById('searchInput');
+    const popupTitle = () => d.querySelector('.leaflet-popup-content h3')?.textContent;
+    const findOption = (title) => until(() => [...d.querySelectorAll('#searchResults [role=option]')].find(o => o.dataset.title === title));
+
     type(w, input, 'Guggenheim');
-    const option = await until(() => [...d.querySelectorAll('#searchResults [role=option]')].find(o => o.textContent === 'Guggenheim Bilbao Museoa'));
+    const option = await findOption('Guggenheim Bilbao Museoa');
     check('bilaketak emaitzak ematen ditu', option);
+    const described = [...d.querySelectorAll('#searchResults [role=option] .text-xs')].map(e => e.textContent);
+    check('emaitzek deskribapena dute', described.length > 0, described.join(' | '));
     option?.click();
-    const tooltip = await until(() => d.querySelector('.article-tooltip'));
-    check('hautatutako artikulua nabarmentzen da', tooltip?.textContent === 'Guggenheim Bilbao Museoa', tooltip?.textContent);
+    check('hautatutako artikuluaren popupa irekitzen da', await until(() => popupTitle() === 'Guggenheim Bilbao Museoa'), popupTitle());
+
+    // Partekatzeko estekak irekitako artikulua barne hartzen du (arbelik gabe, esteka mezuan erakusten da)
+    d.getElementById('shareButton').click();
+    const shared = await until(() => !d.getElementById('mapMessage').classList.contains('hidden') && d.getElementById('mapMessageText').textContent);
+    check('partekatzeko estekak artikulua du', /artikulua=Guggenheim|'Guggenheim Bilbao Museoa' artikuluaren esteka/.test(shared || ''), shared);
 
     type(w, input, 'Bernardo Atxaga');
-    const person = await until(() => [...d.querySelectorAll('#searchResults [role=option]')].find(o => o.textContent === 'Bernardo Atxaga'));
+    const person = await findOption('Bernardo Atxaga');
     person?.click();
-    const indirect = await until(() => [...d.querySelectorAll('.article-tooltip')].find(t => t.textContent === 'Bernardo Atxaga'));
-    check('koordenaturik gabeko artikulua Wikidataren bidez kokatzen da', indirect);
-    check('aurreko nabarmentzea kendu da', d.querySelectorAll('.article-tooltip').length === 1, d.querySelectorAll('.article-tooltip').length);
+    check('koordenaturik gabeko artikulua Wikidataren bidez kokatzen da', await until(() => popupTitle() === 'Bernardo Atxaga'), popupTitle());
+    check('kokapen erlazionatua adierazten da', /Kokapen erlazionatua/.test(d.querySelector('.leaflet-popup-content')?.textContent || ''));
+    d.querySelector('.leaflet-popup-close-button')?.click();
+    await sleep(500);
+    const tooltips = [...d.querySelectorAll('.article-tooltip')].map(t => t.textContent);
+    check('popupa itxita, etiketa bakarra (aurrekoa kenduta)', tooltips.length === 1 && tooltips[0] === 'Bernardo Atxaga', tooltips.join(', '));
 
+    // ?artikulua= parametroak artikulua irekitzen du
+    const shared2 = await loadApp('?artikulua=' + encodeURIComponent('Donostiako Zinemaldia'));
+    const title2 = await until(() => shared2.d.querySelector('.leaflet-popup-content h3')?.textContent === 'Donostiako Zinemaldia', 30000);
+    check('?artikulua= parametroak popupa irekitzen du', title2);
 });
 </script>
 </body>

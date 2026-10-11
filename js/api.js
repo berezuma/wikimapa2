@@ -135,9 +135,20 @@ export const fetchSummary = async (title) => {
     return { extract: page.extract || 'Ez da laburpenik aurkitu.', imageSrc: page.thumbnail?.source };
 };
 
-export const searchTitles = async (query, signal) => {
-    const data = await searchApi({ action: 'opensearch', search: query, limit: '5', namespace: '0' }, signal);
-    return data[1] || [];
+// Izenburu-hasieraren araberako bilaketa, deskribapen, irudi txiki eta koordenatuekin (eskaera bakarra)
+export const searchArticles = async (query, signal) => {
+    const data = await searchApi({
+        action: 'query', generator: 'prefixsearch', gpssearch: query, gpslimit: '6', gpsnamespace: '0',
+        prop: 'description|pageimages|coordinates', piprop: 'thumbnail', pithumbsize: '80', pilimit: '6', redirects: '1',
+    }, signal);
+    return Object.values(data.query?.pages || {})
+        .sort((a, b) => a.index - b.index)
+        .map(page => ({
+            title: page.title,
+            description: page.description || '',
+            thumbnail: page.thumbnail?.source || null,
+            hasCoords: Boolean(page.coordinates?.length),
+        }));
 };
 
 // Orria eta bere koordenatuak (badaude); null orria ez badago

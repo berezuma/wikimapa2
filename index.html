@@ -22,7 +22,7 @@
     <!-- Letra-tipoa -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
         /* Estilo pertsonalizatuak */
@@ -32,19 +32,38 @@
         }
         #map {
             height: 100vh;
+            height: 100dvh; /* mugikorretan helbide-barra kontuan hartuta */
             width: 100vw;
             z-index: 10;
         }
-        .leaflet-popup-content {
+        .leaflet-container {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Artikuluen popup txartela */
+        /* Mugikorrean zooma bi hatzekin egiten da; aitortza txikiagoa */
+        @media (max-width: 639px) {
+            .leaflet-control-zoom { display: none; }
+            .leaflet-control-attribution { font-size: 10px; }
+        }
+        .article-popup .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+        }
+        .article-popup .leaflet-popup-content {
+            margin: 14px 16px;
             font-size: 14px;
-            max-height: 250px;
-            overflow-y: auto;
         }
-        .leaflet-popup-content-wrapper {
-            border-radius: 8px;
+        .article-popup .leaflet-popup-content p {
+            margin: 0;
         }
-        .leaflet-popup-content a {
-            font-weight: 600;
+        .article-popup a.article-read {
+            color: #ffffff;
+        }
+        .article-popup a.leaflet-popup-close-button {
+            width: 32px;
+            height: 32px;
+            font: 22px/32px 'Inter', sans-serif;
+            color: #6b7280;
         }
         #searchResults {
             max-height: 400px;
