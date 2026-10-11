@@ -6,15 +6,17 @@
 <script type="module">
 import { run, check, until, sleep, loadApp } from './harness.js';
 
+const applyIn = (d, ...categories) => {
+    d.querySelectorAll('#category-filters input').forEach(cb => { cb.checked = categories.includes(cb.dataset.category); });
+    d.getElementById('applyFilterButton').click();
+};
+
 run(async () => {
     const { d } = await loadApp('?lat=43.2569&lon=-2.9236&zoom=14');
     const markers = () => d.querySelectorAll('.leaflet-marker-icon').length;
     const loaderHidden = () => d.getElementById('loader').classList.contains('hidden');
     const message = () => d.getElementById('mapMessage').classList.contains('hidden') ? '' : d.getElementById('mapMessageText').textContent;
-    const apply = (...categories) => {
-        d.querySelectorAll('#category-filters input').forEach(cb => { cb.checked = categories.includes(cb.dataset.category); });
-        d.getElementById('applyFilterButton').click();
-    };
+    const apply = (...categories) => applyIn(d, ...categories);
 
     await until(() => markers() > 0);
     await until(loaderHidden);
@@ -26,7 +28,7 @@ run(async () => {
     const seconds = (performance.now() - started) / 1000;
     check('elizen iragazkiak errorerik gabe amaitzen du', !/Errorea/.test(message()), message());
     check('elizen iragazkiak emaitzak ditu', markers() > 0, markers());
-    check('iragazkia 15 s baino gutxiagoan', seconds < 15, `${seconds.toFixed(1)} s`);
+    check('Euskal Herrian iragazkia berehalakoa (datu estatikoak)', seconds < 3, `${seconds.toFixed(1)} s`);
 
     // Kategoria aldatzean eremuaren cachea erabiltzen da: kargarik gabe
     const churches = markers();
@@ -43,6 +45,17 @@ run(async () => {
     await sleep(500);
     await until(loaderHidden, 30000);
     check('iragazkiak garbitzean markatzaile guztiak itzultzen dira', markers() > churches, markers());
+
+    // Eremutik kanpo (Madril), Wikidata zuzenean kontsultatzen da
+    const madrid = await loadApp('?lat=40.4155&lon=-3.7074&zoom=15');
+    const madridMarkers = () => madrid.d.querySelectorAll('.leaflet-marker-icon').length;
+    await until(() => madridMarkers() > 0);
+    await until(() => madrid.d.getElementById('loader').classList.contains('hidden'));
+    applyIn(madrid.d, 'Q16970');
+    await sleep(500);
+    await until(() => madrid.d.getElementById('loader').classList.contains('hidden'), 90000);
+    const madridMessage = madrid.d.getElementById('mapMessage').classList.contains('hidden') ? '' : madrid.d.getElementById('mapMessageText').textContent;
+    check('eremutik kanpo Wikidata zuzenean (Madrileko elizak)', madridMarkers() > 0 && !/Errorea/.test(madridMessage), madridMessage || madridMarkers());
 });
 </script>
 </body>

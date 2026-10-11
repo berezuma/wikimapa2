@@ -149,28 +149,35 @@ const updateMapData = async () => {
     hideMapMessage();
 
     try {
-        if (filtering && map.getZoom() < MIN_FILTER_ZOOM) {
-            // Zoom txikian, bista orokorreko datuekin iragazi (motak barne daude): Wikidatari eskatu gabe
+        if (filtering) {
+            // Euskal Herriko eremuan, edozein zoometan, datu estatikoekin iragazi (motak barne daude):
+            // berehalakoa da, eta Wikidataren kontsultak batzuetan minutu erdi baino gehiago behar ditu
             showLoader("Iragazitako artikuluak kargatzen...");
-            const [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
+            const [overview, subclasses] = await Promise.all([
+                loadOverview().catch((error) => {
+                    console.error("Errorea bista orokorra kargatzean:", error);
+                    return null;
+                }),
+                loadSubclasses(),
+            ]);
             if (updateController !== controller) return;
-            if (overviewCovers(overview, map.getCenter())) {
+            if (overview && overviewCovers(overview, map.getCenter())) {
                 showFilteredArticles(overview.articles, subclasses);
-            } else {
+                return;
+            }
+            // Eremutik kanpo: Wikidata zuzenean, zoom nahikoarekin
+            if (map.getZoom() < MIN_FILTER_ZOOM) {
                 renderArticles([]);
                 showMapMessage(`Zooma handitu iragazkiaren emaitzak ikusteko.`);
+                return;
             }
-        } else if (filtering) {
             if (areaCache && areaCache.bounds.contains(map.getBounds())) {
-                showFilteredArticles(areaCache.articles, await loadSubclasses());
+                showFilteredArticles(areaCache.articles, subclasses);
                 return;
             }
             showLoader("Iragazitako artikuluak kargatzen...");
             const bounds = map.getBounds().pad(0.2);
-            const [articles, subclasses] = await Promise.all([
-                fetchAreaArticles(plainBounds(bounds), controller.signal),
-                loadSubclasses(),
-            ]);
+            const articles = await fetchAreaArticles(plainBounds(bounds), controller.signal);
             if (updateController !== controller) return;
             areaCache = { bounds, articles };
             showFilteredArticles(articles, subclasses);
