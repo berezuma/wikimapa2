@@ -449,6 +449,13 @@ const articleGroup = (article) => {
 const loadMarkerGroups = async () => {
     try {
         const [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
+        // Datu estatikoen data (astero eguneratzen dira automatikoki)
+        if (overview.generated) {
+            document.querySelectorAll('.data-date').forEach(element => {
+                element.textContent = `Datuak: ${overview.generated}`;
+                element.classList.remove('hidden');
+            });
+        }
         typesByTitle = new Map(overview.articles.map(article => [article.title, article.types]));
         groupTypes = [...categoryFilters.querySelectorAll('.category-group')].map(heading => {
             const typeSet = new Set();

@@ -1,0 +1,57 @@
+# Datuen eguneratze automatikoa: astero, data/ karpeta Wikidatatik berriz sortu, egiaztatu eta,
+# aldaketarik badago, main-era igo (GitHub Pages-ek webgunea eguneratzen du).
+# Eskuz ere exekuta daiteke: Actions → "Datuak eguneratu" → Run workflow.
+name: Datuak eguneratu
+
+on:
+  schedule:
+    - cron: '30 3 * * 1' # astelehenetan, 03:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: datuak
+  cancel-in-progress: false
+
+jobs:
+  eguneratu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Mendekotasunik gabe: Node-ren fetch eta modulu estandarrak bakarrik
+      - name: Datuak sortu
+        run: node tools/build-data.mjs
+
+      # Akatsik badago (artikuluak % 10 baino gehiago jaitsi, kategoria hutsak...), lana huts egiten du
+      # eta ez da ezer igotzen; GitHub-ek mezu elektronikoz abisatzen du
+      - name: Datuak egiaztatu
+        id: check
+        run: node tools/check-data.mjs
+
+      - name: Unitate-probak
+        run: node --test tests/unit/
+
+      - name: Commit eta push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Datuak eguneratu: ${{ steps.check.outputs.summary }}"
+          git push
+
+      # GITHUB_TOKEN-ekin egindako push-ek ez dituzte beste lan batzuk abiarazten; Pages eraikitzea eskatu
+      - name: GitHub Pages eguneratu
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "::warning::Ezin izan da Pages eraikitzea eskatu"

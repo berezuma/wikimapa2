@@ -6,7 +6,8 @@
     "build:css": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.css --minify",
     "test": "node --test tests/unit/",
     "test:e2e": "node tests/e2e/run.mjs",
-    "build:data": "node tools/build-data.mjs"
+    "build:data": "node tools/build-data.mjs",
+    "check:data": "node tools/check-data.mjs"
   },
   "devDependencies": {
     "tailwindcss": "3.4.17"

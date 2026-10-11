@@ -39,6 +39,8 @@ run(async () => {
     d.getElementById('filterButton').click();
     const museumCount = await until(() => d.querySelector('input[data-category="Q33506"]').parentElement.querySelector('.category-count').textContent);
     check('kategorien kopuruak panelean', Number(museumCount.replace(/\D/g, '')) > 50, museumCount);
+    const dataDate = d.querySelector('#filterPanel .data-date');
+    check('datuen data panelean', /^Datuak: \d{4}-\d{2}-\d{2}$/.test(dataDate?.textContent || '') && !dataDate.classList.contains('hidden'), dataDate?.textContent);
     check('oinak ez du OSM-ren aitortza estaltzen', !d.querySelector('footer') && /OpenStreetMap/.test(d.querySelector('.leaflet-control-attribution').textContent));
 
     // Datu estatikoen eremutik kanpo (Madril): erdiko zirkulua eta oharra

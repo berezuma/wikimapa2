@@ -111,14 +111,22 @@ const buildArticles = async () => {
         // Motarik eta urterik gabeko artikuluek 3 elementu besterik ez dute (fitxategia txikiagoa)
         articles: [...articles.values()]
             .map(article => (article[4] !== undefined ? article : article[3].length ? article.slice(0, 4) : article.slice(0, 3)))
-            .sort((a, b) => a[0].localeCompare(b[0])),
+            // Kode-puntuen ordena (ez localeCompare): makina guztietan berdina, diff garbiak
+            .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
     };
 };
 
+// Elementu bat lerro bakoitzeko: astero eguneratzean, git-ek aldatutako lerroak bakarrik gordetzen ditu
+const formatCategories = (categories) =>
+    '{\n' + Object.entries(categories).map(([qid, types]) => `${JSON.stringify(qid)}: ${JSON.stringify(types)}`).join(',\n') + '\n}\n';
+const formatOverview = ({ generated, bounds, articles }) =>
+    `{"generated": ${JSON.stringify(generated)}, "bounds": ${JSON.stringify(bounds)}, "articles": [\n` +
+    articles.map(article => JSON.stringify(article)).join(',\n') + '\n]}\n';
+
 await mkdir(`${ROOT}data`, { recursive: true });
 console.log('Kategoriak...');
-await writeFile(`${ROOT}data/kategoriak.json`, JSON.stringify(await buildCategories()) + '\n');
+await writeFile(`${ROOT}data/kategoriak.json`, formatCategories(await buildCategories()));
 console.log('Artikuluak...');
 const overview = await buildArticles();
-await writeFile(`${ROOT}data/artikuluak.json`, JSON.stringify({ generated: new Date().toISOString().slice(0, 10), ...overview }) + '\n');
+await writeFile(`${ROOT}data/artikuluak.json`, formatOverview({ generated: new Date().toISOString().slice(0, 10), ...overview }));
 console.log(`Eginda: ${overview.articles.length} artikulu.`);

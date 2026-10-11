@@ -130,6 +130,7 @@ test('fetchOverviewArticles: motak eta urtea aukerakoak dira', async () => {
         ['Bilbo', 43.26, -2.93, [515], 1300], ['Ibaia', 43.1, -2.5], ['Zubia', 43.2, -2.6, [], 1890],
     ] }));
     assert.deepEqual(await fetchOverviewArticles(), {
+        generated: '2026-10-11',
         bounds,
         articles: [
             { title: 'Bilbo', lat: 43.26, lon: -2.93, types: [515], year: 1300 },

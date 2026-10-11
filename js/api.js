@@ -158,6 +158,7 @@ export const fetchSubclasses = () => fetchJson('data/kategoriak.json');
 export const fetchOverviewArticles = async () => {
     const data = await fetchJson('data/artikuluak.json');
     return {
+        generated: data.generated,
         bounds: data.bounds,
         articles: data.articles.map(([title, lat, lon, types = [], year = null]) => ({ title, lat, lon, types, year })),
     };

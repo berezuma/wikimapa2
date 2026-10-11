@@ -32,11 +32,18 @@ npm run build:css
 
 ## Datuak eguneratu
 
-`data/` karpetako fitxategiak Wikidatatik sortzen dira: kategorien azpiklaseak eta bista orokorreko artikuluak. Kategoria bat gehitzean edo aldatzean (`index.html`-eko `data-category`), edo bista orokorra eguneratzeko:
+`data/` karpetako fitxategiak Wikidatatik sortzen dira: kategorien azpiklaseak, eta bista orokorreko, iragazkietako eta denbora-lerroko artikuluak.
+
+**Automatikoki eguneratzen dira astero** (astelehenetan, GitHub Actions: `.github/workflows/datuak.yml`). Lanak datuak sortzen ditu, egiaztatzen ditu (artikulu-kopurua ez da % 10 baino gehiago jaitsi behar, kategoria guztiek azpiklaseak izan behar dituzte…), eta aldaketarik badago, `main`-era igotzen ditu; webgunea berehala eguneratzen da. Egiaztapenak huts egiten badu, ez da ezer igotzen, eta GitHub-ek mezu elektronikoz abisatzen du. Eskuz ere exekuta daiteke: GitHub-en, *Actions → Datuak eguneratu → Run workflow*.
+
+Kategoria bat gehitzean edo aldatzean (`index.html`-eko `data-category`), sortu datuak eskuz:
 
 ```
 npm run build:data
+npm run check:data
 ```
+
+Bot-ak astero commit-ak egiten dituenez, egin `git pull` lanean hasi aurretik.
 
 ## Probak
 
