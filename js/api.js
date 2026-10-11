@@ -142,7 +142,7 @@ export const fetchOverviewArticles = async () => {
     const data = await fetchJson('data/artikuluak.json');
     return {
         bounds: data.bounds,
-        articles: data.articles.map(([title, lat, lon, types = []]) => ({ title, lat, lon, types })),
+        articles: data.articles.map(([title, lat, lon, types = [], year = null]) => ({ title, lat, lon, types, year })),
     };
 };
 

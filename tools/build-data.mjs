@@ -2,8 +2,9 @@
 //  - data/kategoriak.json: iragazki bakoitzeko Q-id-aren azpiklase guztiak (P279*), zenbaki gisa.
 //    Kategoriak index.html-eko data-category atributuetatik irakurtzen dira.
 //  - data/artikuluak.json: Euskal Herriko eremuko (ehmuga.json + marjina) euskarazko artikulu
-//    geolokalizatu guztiak, [izenburua, lat, lon, motak?] gisa (motak: P31 Q-zenbakiak), bista
-//    orokorrerako eta zoom txikiko iragazkietarako.
+//    geolokalizatu guztiak, [izenburua, lat, lon, motak?, urtea?] gisa (motak: P31 Q-zenbakiak;
+//    urtea: sorrera/irekiera/hasiera/lehen aipamena, txikiena), bista orokorrerako, iragazkietarako
+//    eta denbora-lerrorako.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +14,10 @@ const USER_AGENT = 'wikimapa2-build/1.0 (https://github.com/berezuma/wikimapa2; 
 const ARTICLE_PREFIX = 'https://eu.wikipedia.org/wiki/';
 const REGION_MARGIN_DEG = 0.25;
 const TILES = 4; // eremua TILES x TILES zatitan kontsultatzen da, timeout-ak saihesteko
+// Denbora-lerrorako: sorrera (P571), irekiera (P1619), hasiera (P580) edo lehen aipamen idatzia (P1249).
+// Hortik aurrerako datak (formazio geologikoak, adib. mendiak) ez dira kontuan hartzen.
+const DATE_PROPERTIES = 'wdt:P571|wdt:P1619|wdt:P580|wdt:P1249';
+const MIN_YEAR = -10000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -80,14 +85,32 @@ const buildArticles = async () => {
                 const type = row.type ? qidNumber(row.type.value) : 0;
                 if (type && !types.includes(type)) types.push(type);
             });
-            console.log(`  zatia ${i * TILES + j + 1}/${TILES * TILES}: ${rows.length} errenkada (guztira ${articles.size})`);
+            const dated = await sparql(`
+                SELECT ?article (MIN(YEAR(?date)) AS ?year) WHERE {
+                    SERVICE wikibase:box {
+                        ?item wdt:P625 ?location.
+                        bd:serviceParam wikibase:cornerWest "Point(${w} ${s})"^^geo:wktLiteral.
+                        bd:serviceParam wikibase:cornerEast "Point(${e} ${n})"^^geo:wktLiteral.
+                    }
+                    ?article schema:about ?item; schema:isPartOf <https://eu.wikipedia.org/>.
+                    ?item ${DATE_PROPERTIES} ?date.
+                } GROUP BY ?article`);
+            dated.forEach(row => {
+                const title = decodeURIComponent(row.article.value.slice(ARTICLE_PREFIX.length)).replace(/_/g, ' ');
+                const year = row.year ? Number(row.year.value) : NaN;
+                const article = articles.get(title);
+                if (article && Number.isFinite(year) && year >= MIN_YEAR) {
+                    article[4] = article[4] === undefined ? year : Math.min(article[4], year);
+                }
+            });
+            console.log(`  zatia ${i * TILES + j + 1}/${TILES * TILES}: ${rows.length} errenkada, ${dated.length} data (guztira ${articles.size})`);
         }
     }
     return {
         bounds: { south, west, north, east },
-        // Motarik gabeko artikuluek 3 elementu besterik ez dute (fitxategia txikiagoa)
+        // Motarik eta urterik gabeko artikuluek 3 elementu besterik ez dute (fitxategia txikiagoa)
         articles: [...articles.values()]
-            .map(article => (article[3].length ? article : article.slice(0, 3)))
+            .map(article => (article[4] !== undefined ? article : article[3].length ? article.slice(0, 4) : article.slice(0, 3)))
             .sort((a, b) => a[0].localeCompare(b[0])),
     };
 };

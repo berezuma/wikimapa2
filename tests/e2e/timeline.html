@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Denbora-lerroaren proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, sleep, loadApp } from './harness.js';
+
+// Multzoen zenbakiak + banakako markatzaileak
+const countArticles = (d) => [...d.querySelectorAll('.leaflet-marker-icon')]
+    .reduce((sum, icon) => sum + (icon.classList.contains('marker-cluster') ? Number(icon.textContent.replace(/\./g, '')) || 0 : 1), 0);
+
+run(async () => {
+    const { w, d } = await loadApp('?lat=43.0&lon=-2.0&zoom=9');
+    await until(() => d.querySelector('.marker-cluster'));
+    await sleep(1000);
+    const all = countArticles(d);
+
+    d.getElementById('timelineButton').click();
+    const box = d.getElementById('timeline');
+    check('denbora-lerroa irekitzen da', await until(() => !box.classList.contains('hidden')));
+    check('botoiak aria-pressed', d.getElementById('timelineButton').getAttribute('aria-pressed') === 'true');
+
+    // Automatikoki erreproduzitzen da: urtea aurrera doa
+    const firstYear = d.getElementById('timelineYear').textContent;
+    await sleep(2500);
+    const laterYear = d.getElementById('timelineYear').textContent;
+    check('erreprodukzioak urtea aurreratzen du', firstYear !== laterYear, `${firstYear} → ${laterYear}`);
+
+    // Gelditu eta graduatzailea eskuz: hasieran gutxi, bukaeran data duten guztiak
+    d.getElementById('timelinePlay').click();
+    const slider = d.getElementById('timelineSlider');
+    const setSlider = async (value) => {
+        slider.value = String(value);
+        slider.dispatchEvent(new w.Event('input', { bubbles: true }));
+        await sleep(1500);
+    };
+    await setSlider(Math.floor(Number(slider.max) * 0.1));
+    const early = countArticles(d);
+    const earlyYear = d.getElementById('timelineYear').textContent;
+    await setSlider(Number(slider.max));
+    const late = countArticles(d);
+    check('urte goiztiarretan leku gutxiago', early > 0 && early < late, `${earlyYear}: ${early} < ${late}`);
+    check('data dutenak bakarrik (guztiak baino gutxiago)', late < all, `${late} < ${all}`);
+    check('garaiaren izena', /Aro|Antzinaroa/.test(d.getElementById('timelineEra').textContent), d.getElementById('timelineEra').textContent);
+
+    d.getElementById('timelineClose').click();
+    await sleep(1500);
+    check('itxita, artikulu guztiak itzultzen dira', box.classList.contains('hidden') && countArticles(d) === all, countArticles(d));
+});
+</script>
+</body>
+</html>

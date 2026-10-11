@@ -124,14 +124,17 @@ test('filterByCategories: azpiklaseak eta Q-id anitzeko kategoriak', () => {
     assert.deepEqual(filterByCategories(articles, ['Q999'], subclasses), []);
 });
 
-test('fetchOverviewArticles: motak aukerakoak dira', async () => {
+test('fetchOverviewArticles: motak eta urtea aukerakoak dira', async () => {
     const bounds = { south: 42, west: -4, north: 44, east: -1 };
-    mockFetch(() => ({ generated: '2026-10-11', bounds, articles: [['Bilbo', 43.26, -2.93, [515]], ['Ibaia', 43.1, -2.5]] }));
+    mockFetch(() => ({ generated: '2026-10-11', bounds, articles: [
+        ['Bilbo', 43.26, -2.93, [515], 1300], ['Ibaia', 43.1, -2.5], ['Zubia', 43.2, -2.6, [], 1890],
+    ] }));
     assert.deepEqual(await fetchOverviewArticles(), {
         bounds,
         articles: [
-            { title: 'Bilbo', lat: 43.26, lon: -2.93, types: [515] },
-            { title: 'Ibaia', lat: 43.1, lon: -2.5, types: [] },
+            { title: 'Bilbo', lat: 43.26, lon: -2.93, types: [515], year: 1300 },
+            { title: 'Ibaia', lat: 43.1, lon: -2.5, types: [], year: null },
+            { title: 'Zubia', lat: 43.2, lon: -2.6, types: [], year: 1890 },
         ],
     });
 });

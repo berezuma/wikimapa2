@@ -138,8 +138,12 @@
         .wm-intro-running .leaflet-marker-pane {
             opacity: 0;
         }
-        .wm-intro-card {
+        .wm-intro-card, .wm-timeline-card {
             animation: wm-intro-in 0.6s ease-out;
+        }
+        /* Denbora-lerroa irekita dagoenean, mezuak barraren gainean */
+        body.timeline-open #mapMessage, body.timeline-open #loader {
+            bottom: 9rem;
         }
         #intro.leaving .wm-intro-card {
             opacity: 0;
@@ -151,7 +155,7 @@
             to { opacity: 1; transform: none; }
         }
         @media (prefers-reduced-motion: reduce) {
-            .leaflet-container .leaflet-marker-pane .wm-photo img, .wm-intro-card, .wm-surprise.spinning svg { animation: none; }
+            .leaflet-container .leaflet-marker-pane .wm-photo img, .wm-intro-card, .wm-timeline-card, .wm-surprise.spinning svg { animation: none; }
         }
 
         /* Mugikorrean zooma bi hatzekin egiten da; aitortza txikiagoa */
@@ -264,6 +268,9 @@
         <button id="surpriseButton" class="map-button wm-surprise" aria-label="Harritu nazazu: ausazko artikulu bat" title="Harritu nazazu">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
         </button>
+        <button id="timelineButton" class="map-button" aria-label="Denbora-lerroa" aria-pressed="false" aria-controls="timeline" title="Denbora-lerroa">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        </button>
         <button id="locateButton" class="map-button" aria-label="Nire kokapena">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         </button>
@@ -323,6 +330,28 @@
     <!-- Maparen gaineko mezuak -->
     <div id="mapMessage" role="status" aria-live="polite" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 z-20 w-max max-w-[calc(100vw-2rem)] bg-white bg-opacity-90 p-3 rounded-lg shadow-lg text-center [overflow-wrap:anywhere]">
         <p id="mapMessageText" class="font-semibold text-gray-700"></p>
+    </div>
+
+    <!-- Denbora-lerroa: sorrera-data duten lekuak, urtearen arabera -->
+    <div id="timeline" role="region" aria-label="Denbora-lerroa" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[min(40rem,calc(100vw-2rem))]">
+        <div class="wm-timeline-card rounded-2xl bg-white bg-opacity-95 shadow-2xl px-4 py-3">
+            <div class="flex items-center gap-3">
+                <button id="timelinePlay" class="shrink-0 w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700" aria-label="Erreproduzitu">
+                    <svg id="timelinePlayIcon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                    <svg id="timelinePauseIcon" xmlns="http://www.w3.org/2000/svg" class="hidden h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
+                </button>
+                <div class="min-w-0 flex-grow">
+                    <div class="flex items-baseline gap-2">
+                        <span id="timelineYear" class="text-2xl font-bold text-gray-900 tabular-nums"></span>
+                        <span id="timelineEra" class="text-sm font-semibold text-gray-500 truncate"></span>
+                        <span id="timelineCount" class="ml-auto text-xs text-gray-500 tabular-nums whitespace-nowrap"></span>
+                    </div>
+                    <input id="timelineSlider" type="range" min="0" max="0" value="0" class="w-full accent-blue-600 cursor-pointer" aria-label="Urtea">
+                </div>
+                <button id="timelineClose" class="shrink-0 self-start text-gray-500 hover:text-gray-900 text-2xl leading-none" aria-label="Itxi denbora-lerroa">&times;</button>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Sorrera-data duten lekuak bakarrik (<span id="timelineTotal"></span>), Wikidatatik.</p>
+        </div>
     </div>
 
     <!-- Sarrera animatua (lehen bisitan bakarrik; ez du mapa blokeatzen) -->

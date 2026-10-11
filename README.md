@@ -7,6 +7,7 @@ Euskarazko Wikipediako artikulu geolokalizatuak mapa batean erakusten dituen web
 - Bilatzailea: koordenaturik gabeko artikuluentzat (pertsonak, taldeak…), Wikidatako kokapen erlazionatu bat erakusten du (jaiotza-lekua, sorrera-lekua, kokapena edo udalerria).
 - 24 kategoria-iragazki (museoak, gazteluak, ermitak, trikuharriak, mendiak, ibaiak, herriak…), Wikidatako datuekin. Zoom 12tik gora erabil daitezke.
 - Zoom handian, artikuluen argazkiak markatzaile biribil gisa.
+- Denbora-lerroa: lekuak sortu ziren hurrenkeran agertzen dira (K.a. 4000 – gaur), erreprodukzio automatikoarekin. Wikidatan sorrera-data duten lekuak bakarrik (~2.500).
 - "Harritu nazazu" botoia: Euskal Herriko artikulu aleatorio batera hegan (iragazkiak kontuan hartuta).
 - Zure kokapena, maparen edo artikulu baten esteka partekatzea (`?lat=…&lon=…&zoom=…&artikulua=…`) eta Euskal Herriko muga.
 
