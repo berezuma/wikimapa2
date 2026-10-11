@@ -10,6 +10,14 @@
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossorigin=""/>
 
+    <!-- Leaflet.markercluster: markatzaileak multzokatzeko -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"
+          integrity="sha512-mQ77VzAakzdpWdgfL/lM1ksNy89uFgibRQANsNneSTMD/bj0Y/8+94XMwYhnbzx8eki2hrbPpDm0vD0CiT2lcg=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"
+          integrity="sha512-6ZCLMiYwTeli2rVh3XAPxy3YoR5fVxGdH/pz+KMCzRY2M65Emgkw00Yqmhh8qLGeYQ3LbVZGdmOX9KUjSKr0TA=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"/>
+
 
     <!-- Letra-tipoa -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,8 +46,12 @@
         .leaflet-popup-content a {
             font-weight: 600;
         }
-        #searchResults, #filterPanel {
+        #searchResults {
             max-height: 400px;
+            overflow-y: auto;
+        }
+        #filterPanel {
+            max-height: 100vh;
             overflow-y: auto;
         }
         #searchResults::-webkit-scrollbar, .leaflet-popup-content::-webkit-scrollbar, #filterPanel::-webkit-scrollbar {
@@ -94,7 +106,7 @@
 <body class="bg-gray-100">
 
     <!-- Goiburua eta Bilatzailea -->
-    <header class="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 w-auto max-w-[calc(100vw-1rem)] sm:max-w-md">
+    <header class="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 w-auto max-w-[calc(100vw-4rem)] sm:max-w-md">
         <div class="flex items-center space-x-2">
             <div class="bg-white bg-opacity-90 backdrop-blur-sm p-3 sm:p-4 shadow-lg rounded-lg flex-grow">
                 <div class="flex items-center mb-2">
@@ -132,15 +144,32 @@
                 <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Kultura eta Ondarea</p>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q33506"> Museoak</label>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q23413"> Gazteluak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q1785071"> Gotorlekuak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q16560"> Jauregiak</label>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q16970"> Elizak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q56750657 Q108325"> Ermitak eta kaperak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q44613"> Monasterioak</label>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q12518"> Dorreak eta dorretxeak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q4989906"> Monumentuak</label>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q839954"> Arkeologia-guneak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q101659"> Trikuharriak</label>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q12280"> Zubiak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q39715"> Itsasargiak</label>
                 
                 <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Natura eta Geografia</p>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q8502"> Mendiak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q40080"> Hondartzak</label>
                 <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q35509"> Kobazuloak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q40080"> Hondartzak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q4022"> Ibaiak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q23397 Q131681"> Aintzirak eta urtegiak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q34038"> Ur-jauziak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q473972"> Naturagune babestuak</label>
+                
+                <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Herriak eta Azpiegiturak</p>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q486972"> Herriak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q44782"> Portuak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q3914"> Eskolak</label>
+                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q483110"> Estadioak</label>
             </div>
         </div>
         <div class="mt-4 pt-4 border-t border-gray-200 flex space-x-2">
@@ -180,6 +209,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"
+            integrity="sha512-OFs3W4DIZ5ZkrDhBFtsCP6JXtMEDGmhl0QPlmWYBJay40TT1n3gt2Xuw8Pf/iezgW9CdabjkNChRqozl/YADmg=="
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <script type="module" src="js/app.js"></script>
 

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Bista orokorraren proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, sleep, loadApp } from './harness.js';
+
+// Multzoen zenbakiak + banakako markatzaileak
+const countArticles = (d) => [...d.querySelectorAll('.leaflet-marker-icon')]
+    .reduce((sum, icon) => sum + (icon.classList.contains('marker-cluster') ? Number(icon.textContent) || 0 : 1), 0);
+
+run(async () => {
+    const { d } = await loadApp('?lat=43.0&lon=-2.0&zoom=9');
+    const message = () => d.getElementById('mapMessage').classList.contains('hidden') ? '' : d.getElementById('mapMessageText').textContent;
+
+    check('zoom 9an multzoak agertzen dira', await until(() => d.querySelector('.marker-cluster')));
+    await sleep(1500);
+    const total = countArticles(d);
+    check('Euskal Herri osoko milaka artikulu', total > 5000, total);
+    check('ez da "erdiko 10 km" oharra agertzen', !/10 km/.test(message()), message());
+
+    // Datu estatikoen eremutik kanpo (Madril): erdiko zirkulua eta oharra
+    const outside = await loadApp('?lat=40.4168&lon=-3.7038&zoom=9');
+    const outsideMessage = await until(() => !outside.d.getElementById('mapMessage').classList.contains('hidden') && outside.d.getElementById('mapMessageText').textContent);
+    check('eremutik kanpo erdiko zirkuluaren oharra', /10 km/.test(outsideMessage || ''), outsideMessage);
+});
+</script>
+</body>
+</html>

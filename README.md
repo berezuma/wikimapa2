@@ -2,9 +2,10 @@
 
 Euskarazko Wikipediako artikulu geolokalizatuak mapa batean erakusten dituen web-orria.
 
-- Maparen ikuspegiko artikuluak markatzaile gisa agertzen dira; bat sakatuta, laburpena eta irudia ikusten dira.
+- Maparen ikuspegiko artikuluak markatzaile gisa agertzen dira, multzokatuta. Bat sakatuta, laburpena eta irudia ikusten dira.
+- Bista orokorra: zoom txikian, Euskal Herri osoko artikulu geolokalizatu guztiak (~14.000) ikusten dira.
 - Bilatzailea: koordenaturik gabeko artikuluentzat (pertsonak, taldeak…), Wikidatako kokapen erlazionatu bat erakusten du (jaiotza-lekua, sorrera-lekua, kokapena edo udalerria).
-- Kategoria-iragazkiak (museoak, gazteluak, mendiak, hondartzak…), Wikidatako datuekin. Zoom 12tik gora erabil daitezke.
+- 24 kategoria-iragazki (museoak, gazteluak, ermitak, trikuharriak, mendiak, ibaiak, herriak…), Wikidatako datuekin. Zoom 12tik gora erabil daitezke.
 - Zure kokapena, maparen esteka partekatzea (`?lat=…&lon=…&zoom=…`) eta Euskal Herriko muga.
 
 ## Exekutatu lokalean
@@ -26,6 +27,21 @@ npm install
 npm run build:css
 ```
 
+## Datuak eguneratu
+
+`data/` karpetako fitxategiak Wikidatatik sortzen dira: kategorien azpiklaseak eta bista orokorreko artikuluak. Kategoria bat gehitzean edo aldatzean (`index.html`-eko `data-category`), edo bista orokorra eguneratzeko:
+
+```
+npm run build:data
+```
+
+## Probak
+
+```
+npm test            # js/api.js-en unitate-probak (sarerik gabe)
+npm run test:e2e    # nabigatzaileko probak Chrome headless-en (benetako APIak, sarea behar da)
+```
+
 ## Egitura
 
 | Fitxategia | Edukia |
@@ -34,11 +50,14 @@ npm run build:css
 | `js/app.js` | Mapa, markatzaileak eta interfazea |
 | `js/api.js` | Wikipedia eta Wikidata APIetarako deiak |
 | `ehmuga.json` | Euskal Herriko muga (`[latitudea, longitudea]` puntuak) |
+| `data/` | Sortutako datuak (`npm run build:data`) |
+| `tools/build-data.mjs` | Datuak sortzeko script-a |
+| `tests/` | Unitate-probak (`unit/`) eta nabigatzaileko probak (`e2e/`) |
 | `css/tailwind.css` | Sortutako Tailwind CSS-a (`npm run build:css`) |
 
 ## Datuak
 
-[Wikipedia](https://eu.wikipedia.org) eta [Wikidata](https://www.wikidata.org) (APIak, nabigatzailetik zuzenean), [OpenStreetMap](https://www.openstreetmap.org/copyright) mapa-teselak eta [Leaflet](https://leafletjs.com).
+[Wikipedia](https://eu.wikipedia.org) eta [Wikidata](https://www.wikidata.org) (APIak, nabigatzailetik zuzenean), [OpenStreetMap](https://www.openstreetmap.org/copyright) mapa-teselak, [Leaflet](https://leafletjs.com) eta [Leaflet.markercluster](https://github.com/Leaflet/Leaflet.markercluster).
 
 ## Egilea eta lizentzia
 

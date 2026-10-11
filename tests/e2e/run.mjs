@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['smoke.html', 'keyboard.html'];
+const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['smoke.html', 'keyboard.html', 'filters.html', 'overview.html'];
 const TIMEOUT_MS = 180000;
 
 const CONTENT_TYPES = {
@@ -39,23 +39,56 @@ const startServer = () => new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve(server));
 });
 
+// Chrome DevTools Protocol, pipe bidez (--remote-debugging-pipe: fd 3 idazteko, fd 4 irakurtzeko; mezuak \0-z bukatuta)
+const connectCdp = (child) => {
+    let nextId = 1;
+    let buffer = '';
+    const pending = new Map();
+    child.stdio[4].on('data', (chunk) => {
+        buffer += chunk;
+        let end;
+        while ((end = buffer.indexOf('\0')) >= 0) {
+            const message = JSON.parse(buffer.slice(0, end));
+            buffer = buffer.slice(end + 1);
+            if (message.id && pending.has(message.id)) {
+                const { resolve, reject } = pending.get(message.id);
+                pending.delete(message.id);
+                if (message.error) reject(new Error(message.error.message)); else resolve(message.result);
+            }
+        }
+    });
+    return (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+        const id = nextId++;
+        pending.set(id, { resolve, reject });
+        child.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
+    });
+};
+
+// Orria denbora errealean exekutatu eta <pre id="result">-ek done: true izan arte itxaron
 const runPage = async (chrome, url) => {
     const profile = await mkdtemp(join(tmpdir(), 'wikimapa-e2e-'));
+    const args = ['--headless=new', '--disable-gpu', '--remote-debugging-pipe', `--user-data-dir=${profile}`,
+        '--window-size=1280,800', 'about:blank'];
+    if (process.env.CHROME_NO_SANDBOX) args.unshift('--no-sandbox');
+    const child = spawn(chrome, args, { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+    const send = connectCdp(child);
     try {
-        const args = ['--headless=new', '--disable-gpu', `--user-data-dir=${profile}`, '--window-size=1280,800',
-            '--virtual-time-budget=150000', '--dump-dom', url];
-        if (process.env.CHROME_NO_SANDBOX) args.unshift('--no-sandbox');
-        const child = spawn(chrome, args, { stdio: ['ignore', 'pipe', 'ignore'] });
-        let dom = '';
-        child.stdout.on('data', (chunk) => { dom += chunk; });
-        const timer = setTimeout(() => child.kill('SIGKILL'), TIMEOUT_MS);
-        await new Promise((resolve) => child.on('close', resolve));
-        clearTimeout(timer);
-        const match = dom.match(/<pre id="result">([\s\S]*?)<\/pre>/);
-        if (!match) return { checks: [{ name: 'orriak emaitzarik ez du itzuli', ok: false }] };
-        const text = match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-        return JSON.parse(text);
+        const { targetId } = await send('Target.createTarget', { url });
+        const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+        const deadline = Date.now() + TIMEOUT_MS;
+        let result = null;
+        while (Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            const { result: value } = await send('Runtime.evaluate', {
+                expression: "document.getElementById('result')?.textContent || ''", returnByValue: true,
+            }, sessionId);
+            if (value.value) result = JSON.parse(value.value);
+            if (result?.done) break;
+        }
+        return result || { checks: [{ name: 'orriak emaitzarik ez du itzuli', ok: false }] };
     } finally {
+        child.kill();
+        await new Promise((resolve) => child.on('close', resolve));
         await rm(profile, { recursive: true, force: true });
     }
 };

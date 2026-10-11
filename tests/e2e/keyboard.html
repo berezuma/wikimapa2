@@ -12,7 +12,7 @@ run(async () => {
     await until(() => d.querySelector('.leaflet-tile'));
     const tile = d.querySelector('.leaflet-tile')?.src || '';
     check('URL parametro okerrekin zoom lehenetsia', /\/9\/\d+\/\d+\.png$/.test(tile), tile);
-    check('zoom txikian oharra erakusten da', await until(() => !d.getElementById('mapMessage').classList.contains('hidden')));
+    check('zoom txikian bista orokorra (multzoak)', await until(() => d.querySelector('.marker-cluster')));
 
     const searchResults = d.getElementById('searchResults');
     check('emaitzen zerrenda hasieran ezkutuan', searchResults.classList.contains('hidden'));

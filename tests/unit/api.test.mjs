@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    fetchJson, geosearchBox, geosearchAround, fetchCategoryArticles, fetchPage, findLocationViaWikidata
+    fetchJson, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchPage, findLocationViaWikidata
 } from '../../js/api.js';
 
 const realFetch = globalThis.fetch;
@@ -25,10 +25,10 @@ const mockFetch = (handler) => {
     return calls;
 };
 
-const sparqlRow = (qid, lon, lat, title) => ({
-    item: { value: `http://www.wikidata.org/entity/${qid}` },
+const sparqlRow = (lon, lat, title, type) => ({
     location: { value: `Point(${lon} ${lat})` },
     article: { value: `https://eu.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}` },
+    ...(type ? { type: { value: `http://www.wikidata.org/entity/${type}` } } : {}),
 });
 
 test('fetchJson: HTTP errorea jaurtitzen du', async () => {
@@ -74,30 +74,37 @@ test('geosearch: abort egitean itxaronaldia eteten da', async () => {
     await assert.rejects(promise, (error) => error.name === 'AbortError');
 });
 
-test('fetchCategoryArticles: izenburua URLtik, bikoiztuak kenduta, pageid gabekoak kanpoan', async () => {
-    const calls = mockFetch((url) => {
-        if (url.host === 'query.wikidata.org') {
-            return { results: { bindings: [
-                sparqlRow('Q1', -2.93, 43.26, 'Bilboko Euskal Museoa'),
-                sparqlRow('Q1', -2.93, 43.26, 'Bilboko Euskal Museoa'),
-                sparqlRow('Q2', -2.92, 43.25, 'Santiago katedrala (Bilbo)'),
-                sparqlRow('Q3', -2.91, 43.24, 'Ez dagoen orria'),
-            ] } };
-        }
-        return { query: { pages: {
-            '100': { pageid: 100, title: 'Bilboko Euskal Museoa' },
-            '200': { pageid: 200, title: 'Santiago katedrala (Bilbo)' },
-            '-1': { title: 'Ez dagoen orria', missing: '' },
-        } } };
-    });
-    const articles = await fetchCategoryArticles(['Q33506'], { north: 43.3, south: 43.2, east: -2.9, west: -3.0 });
+test('fetchAreaArticles: izenburua URLtik, motak izenburuka bilduta', async () => {
+    const calls = mockFetch(() => ({ results: { bindings: [
+        sparqlRow(-2.93, 43.26, 'Bilboko Euskal Museoa', 'Q33506'),
+        sparqlRow(-2.93, 43.26, 'Bilboko Euskal Museoa', 'Q207694'),
+        sparqlRow(-2.93, 43.26, 'Bilboko Euskal Museoa', 'Q33506'),
+        sparqlRow(-2.92, 43.25, 'Santiago katedrala (Bilbo)', 'Q2977'),
+        sparqlRow(-2.91, 43.24, 'Motarik gabea'),
+    ] } }));
+    const articles = await fetchAreaArticles({ north: 43.3, south: 43.2, east: -2.9, west: -3.0 });
     assert.deepEqual(articles, [
-        { title: 'Bilboko Euskal Museoa', lat: 43.26, lon: -2.93, pageid: 100 },
-        { title: 'Santiago katedrala (Bilbo)', lat: 43.25, lon: -2.92, pageid: 200 },
+        { title: 'Bilboko Euskal Museoa', lat: 43.26, lon: -2.93, types: [33506, 207694] },
+        { title: 'Santiago katedrala (Bilbo)', lat: 43.25, lon: -2.92, types: [2977] },
+        { title: 'Motarik gabea', lat: 43.24, lon: -2.91, types: [] },
     ]);
     const sparql = calls[0].searchParams.get('query');
-    assert.match(sparql, /wd:Q33506/);
     assert.match(sparql, /Point\(-3 43\.2\)/);
+    assert.doesNotMatch(sparql, /P279/);
+});
+
+test('filterByCategories: azpiklaseak eta Q-id anitzeko kategoriak', () => {
+    const articles = [
+        { title: 'Museoa', types: [33506] },
+        { title: 'Arte museoa', types: [207694] },
+        { title: 'Katedrala', types: [2977] },
+        { title: 'Urtegia', types: [131681] },
+        { title: 'Motarik gabea', types: [] },
+    ];
+    const subclasses = { Q33506: [33506, 207694], Q16970: [16970, 2977], Q23397: [23397], Q131681: [131681] };
+    assert.deepEqual(filterByCategories(articles, ['Q33506'], subclasses).map(a => a.title), ['Museoa', 'Arte museoa']);
+    assert.deepEqual(filterByCategories(articles, ['Q16970', 'Q23397 Q131681'], subclasses).map(a => a.title), ['Katedrala', 'Urtegia']);
+    assert.deepEqual(filterByCategories(articles, ['Q999'], subclasses), []);
 });
 
 test('fetchPage: orria ez badago null', async () => {
@@ -107,7 +114,7 @@ test('fetchPage: orria ez badago null', async () => {
 
 test('fetchPage: koordenatuak itzultzen ditu', async () => {
     mockFetch(() => ({ query: { pages: { '5': { pageid: 5, title: 'Bilbo', coordinates: [{ lat: 43.26, lon: -2.93 }] } } } }));
-    assert.deepEqual(await fetchPage('Bilbo'), { pageid: 5, title: 'Bilbo', coords: { lat: 43.26, lon: -2.93 } });
+    assert.deepEqual(await fetchPage('Bilbo'), { title: 'Bilbo', coords: { lat: 43.26, lon: -2.93 } });
 });
 
 test('findLocationViaWikidata: somevalue saltatu eta lehentasun-ordena errespetatu', async () => {
@@ -128,5 +135,5 @@ test('findLocationViaWikidata: somevalue saltatu eta lehentasun-ordena errespeta
         }
     });
     // P19 "somevalue" da, P740 falta da, beraz P276 (P131 baino lehen)
-    assert.deepEqual(await findLocationViaWikidata(9), { title: 'Leku Q276', coords: { lat: 43.1, lon: -2.1 } });
+    assert.deepEqual(await findLocationViaWikidata('Pertsona'), { title: 'Leku Q276', coords: { lat: 43.1, lon: -2.1 } });
 });

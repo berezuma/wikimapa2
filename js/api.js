@@ -61,62 +61,73 @@ export const geosearchBox = (bounds, signal) =>
 export const geosearchAround = ({ lat, lon }, signal) =>
     geosearch({ gscoord: `${lat}|${lon}`, gsradius: String(GEOSEARCH_MAX_RADIUS_M) }, signal);
 
-// Izenburuak -> pageid, 50eko multzoetan (APIaren muga)
-const getPageIds = async (titles, signal) => {
-    const pageIds = new Map();
-    for (let i = 0; i < titles.length; i += 50) {
-        const chunk = titles.slice(i, i + 50);
-        const data = await wikipediaApi({ action: 'query', titles: chunk.join('|') }, signal);
-        Object.values(data.query?.pages || {}).forEach(page => {
-            if (page.pageid) pageIds.set(page.title, page.pageid);
-        });
-    }
-    return pageIds;
+const parseTitle = (articleUrl) => decodeURIComponent(articleUrl.slice(WIKIPEDIA_ARTICLE_PREFIX.length)).replace(/_/g, ' ');
+const parsePoint = (wkt) => {
+    const coord = wkt.match(/Point\(([-\d.eE]+) ([-\d.eE]+)\)/);
+    return coord ? { lat: parseFloat(coord[2]), lon: parseFloat(coord[1]) } : null;
 };
 
-// Wikidatako kategorietako (Q-id) elementuak, euskarazko artikulua dutenak, bounds barruan
-export const fetchCategoryArticles = async (categories, bounds, signal) => {
-    const categoryValues = categories.map(cat => `wd:${cat}`).join(' ');
+// Eremuko euskarazko artikulu guztiak, Wikidatako motekin (P31, Q-zenbaki gisa).
+// Kategoriaren araberako iragazketa bezeroan egiten da (filterByCategories): P279* bidea
+// kontsultan sartzean 10-60 s behar ditu Wikidatak, eta hau 3-5 s-tan egiten da.
+export const fetchAreaArticles = async (bounds, signal) => {
     const sparqlQuery = `
-        SELECT ?item ?location ?article WHERE {
-            VALUES ?category { ${categoryValues} }
-            ?item wdt:P31/wdt:P279* ?category.
-
+        SELECT ?location ?article ?type WHERE {
             SERVICE wikibase:box {
               ?item wdt:P625 ?location.
               bd:serviceParam wikibase:cornerWest "Point(${bounds.west} ${bounds.south})"^^geo:wktLiteral.
               bd:serviceParam wikibase:cornerEast "Point(${bounds.east} ${bounds.north})"^^geo:wktLiteral.
             }
-
             ?article schema:about ?item;
                      schema:isPartOf <https://eu.wikipedia.org/>.
-        } LIMIT 1000`;
+            OPTIONAL { ?item wdt:P31 ?type. }
+        }`;
 
     const url = buildUrl(WIKIDATA_SPARQL_ENDPOINT, { query: sparqlQuery, format: 'json' });
     const data = await fetchJson(url, { headers: { 'Accept': 'application/sparql-results+json' }, signal });
 
-    // Elementu bakoitzeko lehen emaitza bakarrik (kategoria edo koordenatu bat baino gehiago izan ditzake).
     // Izenburua artikuluaren URLtik ateratzen da, ez etiketatik: etiketa eta izenburua ez dira beti berdinak.
+    // Elementu batek errenkada bat du mota eta koordenatu bakoitzeko; izenburuaren arabera biltzen dira.
     const byTitle = new Map();
     data.results.bindings.forEach(row => {
-        const articleUrl = row.article.value;
-        if (!articleUrl.startsWith(WIKIPEDIA_ARTICLE_PREFIX)) return;
-        const title = decodeURIComponent(articleUrl.slice(WIKIPEDIA_ARTICLE_PREFIX.length)).replace(/_/g, ' ');
-        const coord = row.location.value.match(/Point\(([-\d.eE]+) ([-\d.eE]+)\)/);
-        if (!coord || byTitle.has(title)) return;
-        byTitle.set(title, { title, lat: parseFloat(coord[2]), lon: parseFloat(coord[1]) });
+        if (!row.article.value.startsWith(WIKIPEDIA_ARTICLE_PREFIX)) return;
+        const title = parseTitle(row.article.value);
+        let article = byTitle.get(title);
+        if (!article) {
+            const point = parsePoint(row.location.value);
+            if (!point) return;
+            article = { title, ...point, types: [] };
+            byTitle.set(title, article);
+        }
+        if (row.type) {
+            const type = Number(row.type.value.slice(row.type.value.lastIndexOf('/Q') + 2));
+            if (type && !article.types.includes(type)) article.types.push(type);
+        }
     });
-
-    const pageIds = await getPageIds([...byTitle.keys()], signal);
-    return [...byTitle.values()]
-        .filter(article => pageIds.has(article.title))
-        .map(article => ({ ...article, pageid: pageIds.get(article.title) }));
+    return [...byTitle.values()];
 };
 
-export const fetchSummary = async (pageid) => {
-    const data = await wikipediaApi({ action: 'query', pageids: pageid, prop: 'extracts|pageimages', exintro: 'true', explaintext: 'true', pithumbsize: '200' });
-    const page = data.query?.pages?.[pageid];
-    if (!page) return null;
+// categories: data-category balioak ("Q1" edo "Q1 Q2"); subclasses: data/kategoriak.json ({ Q-id: [zenbakiak] })
+export const filterByCategories = (articles, categories, subclasses) => {
+    const wanted = new Set(categories.flatMap(category => category.split(/\s+/)).flatMap(qid => subclasses[qid] || []));
+    return articles.filter(article => article.types.some(type => wanted.has(type)));
+};
+
+// Aurrez sortutako datuak (npm run build:data)
+export const fetchSubclasses = () => fetchJson('data/kategoriak.json');
+
+export const fetchOverviewArticles = async () => {
+    const data = await fetchJson('data/artikuluak.json');
+    return {
+        bounds: data.bounds,
+        articles: data.articles.map(([title, lat, lon]) => ({ title, lat, lon })),
+    };
+};
+
+export const fetchSummary = async (title) => {
+    const data = await wikipediaApi({ action: 'query', titles: title, redirects: '1', prop: 'extracts|pageimages', exintro: 'true', explaintext: 'true', pithumbsize: '200' });
+    const page = Object.values(data.query?.pages || {})[0];
+    if (!page || page.missing !== undefined) return null;
     return { extract: page.extract || 'Ez da laburpenik aurkitu.', imageSrc: page.thumbnail?.source };
 };
 
@@ -130,14 +141,14 @@ export const fetchPage = async (title) => {
     const data = await wikipediaApi({ action: 'query', titles: title, prop: 'coordinates', redirects: '1' });
     const page = Object.values(data.query?.pages || {})[0];
     if (!page || page.missing !== undefined) return null;
-    return { pageid: page.pageid, title: page.title, coords: page.coordinates?.[0] || null };
+    return { title: page.title, coords: page.coordinates?.[0] || null };
 };
 
 // Koordenaturik gabeko artikuluentzat, Wikidatan kokapen erlazionatu bat bilatu
-export const findLocationViaWikidata = async (pageId) => {
+export const findLocationViaWikidata = async (title) => {
     try {
-        const pagePropsData = await wikipediaApi({ action: 'query', pageids: pageId, prop: 'pageprops' });
-        const wikidataId = pagePropsData.query?.pages?.[pageId]?.pageprops?.wikibase_item;
+        const pagePropsData = await wikipediaApi({ action: 'query', titles: title, prop: 'pageprops' });
+        const wikidataId = Object.values(pagePropsData.query?.pages || {})[0]?.pageprops?.wikibase_item;
         if (!wikidataId) return null;
 
         // Lehentasun-ordenan: jaiotza-lekua, sorrera-lekua, kokapena, administrazio-unitatea

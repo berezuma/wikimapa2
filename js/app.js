@@ -1,7 +1,7 @@
 // Mapa, markatzaileak eta interfazea. Datuak api.js-tik datoz.
 import {
-    fetchJson, isAbortError, geosearchBox, geosearchAround, fetchCategoryArticles,
-    fetchSummary, searchTitles, fetchPage, findLocationViaWikidata
+    fetchJson, isAbortError, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories,
+    fetchSubclasses, fetchOverviewArticles, fetchSummary, searchTitles, fetchPage, findLocationViaWikidata
 } from './api.js';
 
 const BORDER_DATA_URL = "ehmuga.json";
@@ -21,14 +21,20 @@ const clearFilterButton = document.getElementById('clearFilterButton');
 const mapMessage = document.getElementById('mapMessage');
 const mapMessageText = document.getElementById('mapMessageText');
 
+// Artikuluak izenburuaren arabera identifikatzen dira (geosearch, Wikidata eta datu estatikoak)
 const summaryCache = {};
-let selectedArticleId = null;
+let selectedTitle = null;
 const activeCategoryFilters = new Set();
 const MIN_FILTER_ZOOM = 12;
-let lastFilterBounds = null;
+// Iragazkietarako azken eremuko artikuluak ({ bounds, articles }): kategoriak aldatzean edo
+// eremu horren barruan mugitzean ez da Wikidata berriz kontsultatzen
+let areaCache = null;
+let subclassesPromise = null;
+let overviewPromise = null;
 
 // Wikipediaren geosearch-ak ~400 km²-ko bbox-a onartzen du gehienez ("toobig" errorea bestela).
-// Ikuspegia handiagoa bada, erdiko zirkulua kontsultatzen da.
+// Ikuspegia handiagoa bada, bista orokorra erabiltzen da (data/artikuluak.json), edo eremu horretatik
+// kanpo erdiko zirkulua.
 const GEOSEARCH_MAX_AREA_KM2 = 350;
 
 // URLko parametroa zenbaki baliozkoa bada eta tartean badago, bera; bestela lehenetsia
@@ -43,16 +49,24 @@ const lat = numberParam(urlParams, 'lat', -90, 90, 43.0);
 const lon = numberParam(urlParams, 'lon', -180, 180, -2.5);
 const zoom = Math.round(numberParam(urlParams, 'zoom', 0, 19, 9));
 
-const map = L.map('map').setView([lat, lon], zoom);
+// Zoom kontrolak behean, goiburuak estal ez ditzan
+const map = L.map('map', { zoomControl: false }).setView([lat, lon], zoom);
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-const markersLayer = L.layerGroup().addTo(map);
+// Markatzaileak multzokatuta; zoom 17tik aurrera banan-banan
+const markersLayer = L.markerClusterGroup({
+    chunkedLoading: true,
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    disableClusteringAtZoom: 17,
+}).addTo(map);
 const indirectLayer = L.layerGroup().addTo(map);
-// pageid -> markatzailea; mapa mugitzean dauden markatzaileak mantentzeko
-const markersById = new Map();
+// izenburua -> markatzailea; mapa mugitzean dauden markatzaileak mantentzeko
+const markersByTitle = new Map();
 let highlightedMarker = null;
 
 let debounceTimer;
@@ -103,21 +117,30 @@ const drawBasqueCountryBorders = async () => {
     }
 };
 
+// Datu estatikoak behin bakarrik kargatzen dira; huts eginez gero, hurrengoan berriz saiatzen da
+const loadSubclasses = () => {
+    subclassesPromise ??= fetchSubclasses().catch((error) => { subclassesPromise = null; throw error; });
+    return subclassesPromise;
+};
+const loadOverview = () => {
+    overviewPromise ??= fetchOverviewArticles().catch((error) => { overviewPromise = null; throw error; });
+    return overviewPromise;
+};
+
+const showFilteredArticles = (articles, subclasses) => {
+    const filtered = filterByCategories(articles, [...activeCategoryFilters], subclasses);
+    renderArticles(filtered);
+    if (filtered.length === 0) showMapMessage("Ez dago iragazkiarekin bat datorren artikulurik ikuspegi honetan.", 4000);
+};
+
 const updateMapData = async () => {
     const filtering = activeCategoryFilters.size > 0;
 
-    if (filtering) {
-        if (map.getZoom() < MIN_FILTER_ZOOM) {
-            updateController?.abort();
-            renderArticles([]);
-            showMapMessage(`Zooma handitu iragazkiaren emaitzak ikusteko.`);
-            return;
-        }
-        if (lastFilterBounds && lastFilterBounds.contains(map.getBounds())) {
-            return;
-        }
-    } else {
-        lastFilterBounds = null;
+    if (filtering && map.getZoom() < MIN_FILTER_ZOOM) {
+        updateController?.abort();
+        renderArticles([]);
+        showMapMessage(`Zooma handitu iragazkiaren emaitzak ikusteko.`);
+        return;
     }
 
     // Aurreko eskaera bertan behera utzi, erantzun zaharrek berriak gainidatz ez ditzaten
@@ -128,14 +151,23 @@ const updateMapData = async () => {
 
     try {
         if (filtering) {
-            const currentBounds = map.getBounds();
+            if (areaCache && areaCache.bounds.contains(map.getBounds())) {
+                showFilteredArticles(areaCache.articles, await loadSubclasses());
+                return;
+            }
             showLoader("Iragazitako artikuluak kargatzen...");
-            const articles = await fetchCategoryArticles([...activeCategoryFilters], plainBounds(currentBounds), controller.signal);
-            renderArticles(articles);
-            lastFilterBounds = currentBounds.pad(0.2);
+            const bounds = map.getBounds().pad(0.2);
+            const [articles, subclasses] = await Promise.all([
+                fetchAreaArticles(plainBounds(bounds), controller.signal),
+                loadSubclasses(),
+            ]);
+            if (updateController !== controller) return;
+            areaCache = { bounds, articles };
+            showFilteredArticles(articles, subclasses);
         } else {
             showLoader("Artikuluak kargatzen...");
             const { articles, partial } = await fetchGeosearchData(controller.signal);
+            if (updateController !== controller) return;
             renderArticles(articles);
             if (partial) {
                 showMapMessage("Erdiko 10 km-ko artikuluak bakarrik erakusten dira. Handitu zooma gehiago ikusteko.");
@@ -158,16 +190,27 @@ const boundsAreaKm2 = (bounds) => {
 
 const fetchGeosearchData = async (signal) => {
     const bounds = map.getBounds();
-    const fetchAroundCenter = async () => {
+    const fetchLargeView = async () => {
         const center = map.getCenter();
+        // Bista orokorra, erdigunea datu estatikoen eremuan badago
+        const overview = await loadOverview().catch((error) => {
+            console.error("Errorea bista orokorra kargatzean:", error);
+            return null;
+        });
+        if (overview) {
+            const { south, west, north, east } = overview.bounds;
+            if (L.latLngBounds([south, west], [north, east]).contains(center)) {
+                return { articles: overview.articles, partial: false };
+            }
+        }
         return { articles: await geosearchAround({ lat: center.lat, lon: center.lng }, signal), partial: true };
     };
 
-    if (boundsAreaKm2(bounds) > GEOSEARCH_MAX_AREA_KM2) return fetchAroundCenter();
+    if (boundsAreaKm2(bounds) > GEOSEARCH_MAX_AREA_KM2) return fetchLargeView();
     try {
         return { articles: await geosearchBox(plainBounds(bounds), signal), partial: false };
     } catch (error) {
-        if (error.code === 'toobig') return fetchAroundCenter();
+        if (error.code === 'toobig') return fetchLargeView();
         throw error;
     }
 };
@@ -185,35 +228,40 @@ const clearHighlight = () => {
 
 // Markatzaileak eguneratu: ikuspegitik kanpokoak kendu, berriak gehitu eta daudenak mantendu.
 // Popupa irekita duen markatzailea ez da inoiz kentzen (autoPan-ek mugimendua eragiten du).
+// Multzokatzeak milaka markatzaile izan ditzake (bista orokorra), beraz sortetan gehitu eta kentzen dira.
 const renderArticles = (articles) => {
-    const visibleIds = new Set(articles.map(article => String(article.pageid)));
+    const visibleTitles = new Set(articles.map(article => article.title));
 
-    markersById.forEach((marker, id) => {
-        if (!visibleIds.has(id) && !marker.isPopupOpen()) {
+    const toRemove = [];
+    markersByTitle.forEach((marker, title) => {
+        if (!visibleTitles.has(title) && !marker.isPopupOpen()) {
             if (marker === highlightedMarker) highlightedMarker = null;
-            markersLayer.removeLayer(marker);
-            markersById.delete(id);
+            toRemove.push(marker);
+            markersByTitle.delete(title);
         }
     });
+    if (toRemove.length) markersLayer.removeLayers(toRemove);
 
+    const toAdd = [];
     articles.forEach(article => {
-        const id = String(article.pageid);
-        let marker = markersById.get(id);
-        if (!marker) {
-            marker = createMarker(article);
-            markersById.set(id, marker);
-            markersLayer.addLayer(marker);
-        }
-        if (selectedArticleId !== null && id === String(selectedArticleId)) {
-            highlightMarker(marker, article.title);
-            selectedArticleId = null;
+        if (!markersByTitle.has(article.title)) {
+            const marker = createMarker(article);
+            markersByTitle.set(article.title, marker);
+            toAdd.push(marker);
         }
     });
+    if (toAdd.length) markersLayer.addLayers(toAdd);
+
+    if (selectedTitle !== null && markersByTitle.has(selectedTitle)) {
+        highlightMarker(markersByTitle.get(selectedTitle), selectedTitle);
+        selectedTitle = null;
+    }
 };
 
 const createMarker = (article) => {
     const marker = L.marker([article.lat, article.lon]);
-    marker.bindPopup(createPopupContent(article, 'Laburpena kargatzen...'));
+    // Edukia popupa irekitzean sortzen da (bista orokorrak milaka markatzaile ditu)
+    marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || 'Laburpena kargatzen...'));
     marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
     return marker;
 };
@@ -222,7 +270,7 @@ const showIndirectMarker = (info) => {
     indirectLayer.clearLayers();
     const marker = L.marker(info.coords);
     marker.bindTooltip(info.title, { permanent: true, direction: 'top', offset: [0, -10], className: 'article-tooltip' }).openTooltip();
-    const articleForPopup = { pageid: info.pageid, title: info.title };
+    const articleForPopup = { title: info.title };
     marker.bindPopup(createPopupContent(articleForPopup, 'Laburpena kargatzen...', info.locTitle));
     marker.on('popupopen', () => fetchAndDisplaySummary(articleForPopup, marker, info.locTitle));
     indirectLayer.addLayer(marker);
@@ -230,13 +278,13 @@ const showIndirectMarker = (info) => {
 
 const fetchAndDisplaySummary = async (article, marker, locTitle = null) => {
     const popup = marker.getPopup();
-    if (summaryCache[article.pageid]) {
-        popup.setContent(createPopupContent(article, summaryCache[article.pageid], locTitle)); return;
+    if (summaryCache[article.title]) {
+        popup.setContent(createPopupContent(article, summaryCache[article.title], locTitle)); return;
     }
     try {
-        const summary = await fetchSummary(article.pageid);
+        const summary = await fetchSummary(article.title);
         if (summary) {
-            summaryCache[article.pageid] = summary;
+            summaryCache[article.title] = summary;
             popup.setContent(createPopupContent(article, summary, locTitle));
         } else {
             popup.setContent(createPopupContent(article, { extract: "Ezin izan da artikuluaren informazioa aurkitu." }, locTitle));
@@ -270,7 +318,7 @@ const createPopupContent = (article, summaryData, locTitle = null) => {
     container.appendChild(createElement('p', 'text-gray-700 text-sm mb-2', summary));
 
     const link = createElement('a', 'text-blue-600 hover:underline', 'Artikulua irakurri →');
-    link.href = `https://eu.wikipedia.org/?curid=${encodeURIComponent(article.pageid)}`;
+    link.href = `https://eu.wikipedia.org/wiki/${encodeURIComponent(article.title.replace(/ /g, '_'))}`;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     container.appendChild(link);
@@ -376,22 +424,22 @@ const selectArticle = async (title) => {
             return;
         }
         if (page.coords) {
-            selectedArticleId = page.pageid;
+            selectedTitle = page.title;
             // Markatzailea dagoeneko mapan badago, berehala nabarmendu
-            const existing = markersById.get(String(page.pageid));
+            const existing = markersByTitle.get(page.title);
             if (existing) {
                 highlightMarker(existing, page.title);
-                selectedArticleId = null;
+                selectedTitle = null;
             }
             map.flyTo([page.coords.lat, page.coords.lon], 18);
         } else {
             showLoader(`'${title}' artikuluaren kokapen garrantzitsuena bilatzen...`);
-            const location = await findLocationViaWikidata(page.pageid);
+            const location = await findLocationViaWikidata(page.title);
             hideLoader();
             if (location) {
                 const { title: locTitle, coords } = location;
-                selectedArticleId = null;
-                showIndirectMarker({ title: page.title, pageid: page.pageid, coords: [coords.lat + 0.001, coords.lon], locTitle: locTitle });
+                selectedTitle = null;
+                showIndirectMarker({ title: page.title, coords: [coords.lat + 0.001, coords.lon], locTitle: locTitle });
                 map.flyTo([coords.lat, coords.lon], 17);
             } else {
                 showMapMessage(`Ezin izan da kokapenik aurkitu '${title}' artikuluarentzat.`, 4000);
@@ -465,7 +513,6 @@ applyFilterButton.addEventListener('click', () => {
     categoryFilters.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
         activeCategoryFilters.add(cb.dataset.category);
     });
-    lastFilterBounds = null;
     closeFilterPanel();
     updateMapData();
 });
@@ -473,7 +520,6 @@ applyFilterButton.addEventListener('click', () => {
 clearFilterButton.addEventListener('click', () => {
     categoryFilters.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
     activeCategoryFilters.clear();
-    lastFilterBounds = null;
     closeFilterPanel();
     updateMapData();
 });

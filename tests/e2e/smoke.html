@@ -8,6 +8,8 @@ import { run, check, until, sleep, loadApp, type } from './harness.js';
 
 run(async () => {
     const { w, d } = await loadApp('?lat=43.263&lon=-2.935&zoom=15');
+    // Multzoak ere .leaflet-marker-icon dira; banakako markatzaileak bakarrik zenbatu
+    const singleMarkers = () => [...d.querySelectorAll('.leaflet-marker-icon:not(.marker-cluster)')];
     const markers = () => d.querySelectorAll('.leaflet-marker-icon').length;
     const message = () => d.getElementById('mapMessage').classList.contains('hidden') ? '' : d.getElementById('mapMessageText').textContent;
 
@@ -15,10 +17,10 @@ run(async () => {
     check('Euskal Herriko muga marrazten da', await until(() => d.querySelector('path[stroke="#D50000"]')));
 
     // Goiko markatzailearen popupak autoPan eragiten du (moveend); popupak irekita jarraitu behar du
-    const top = [...d.querySelectorAll('.leaflet-marker-icon')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+    const top = singleMarkers().sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
     top.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
     const link = await until(() => d.querySelector('.leaflet-popup-content a'));
-    check('popupak artikuluaren esteka du', link && /curid=\d+/.test(link.href), link?.href);
+    check('popupak artikuluaren esteka du', link && /^https:\/\/eu\.wikipedia\.org\/wiki\/./.test(link.href), link?.href);
     await sleep(3000);
     check('popupa irekita mapa mugitu ondoren', d.querySelector('.leaflet-popup-content'));
     check('laburpena kargatu da', !/kargatzen/.test(d.querySelector('.leaflet-popup-content')?.textContent || ''));
@@ -38,12 +40,6 @@ run(async () => {
     check('koordenaturik gabeko artikulua Wikidataren bidez kokatzen da', indirect);
     check('aurreko nabarmentzea kendu da', d.querySelectorAll('.article-tooltip').length === 1, d.querySelectorAll('.article-tooltip').length);
 
-    // Kategoria-iragazkia (kobazuloak)
-    d.querySelector('input[data-category="Q35509"]').checked = true;
-    d.getElementById('applyFilterButton').click();
-    await sleep(1000);
-    await until(() => d.getElementById('loader').classList.contains('hidden'), 60000);
-    check('iragazkiak errorerik gabe amaitzen du', !/Errorea/.test(message()), message());
 });
 </script>
 </body>
