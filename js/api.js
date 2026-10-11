@@ -117,6 +117,24 @@ export const filterByCategories = (articles, categories, subclasses) => {
     return articles.filter(article => article.types.some(type => wanted.has(type)));
 };
 
+// Artikuluen irudi txikiak (izenburua -> URL edo null), 50eko sortetan (APIaren muga)
+export const fetchThumbnails = async (titles, signal) => {
+    const thumbnails = new Map();
+    for (let i = 0; i < titles.length; i += 50) {
+        const chunk = titles.slice(i, i + 50);
+        const data = await wikipediaApi({
+            action: 'query', titles: chunk.join('|'), prop: 'pageimages', piprop: 'thumbnail', pithumbsize: '96', pilimit: '50',
+        }, signal);
+        // Izenburu normalizatuak (adib. lehen letra larria) jatorrizkora itzuli
+        const original = new Map((data.query?.normalized || []).map(n => [n.to, n.from]));
+        Object.values(data.query?.pages || {}).forEach(page => {
+            thumbnails.set(original.get(page.title) || page.title, page.thumbnail?.source || null);
+        });
+        chunk.forEach(title => { if (!thumbnails.has(title)) thumbnails.set(title, null); });
+    }
+    return thumbnails;
+};
+
 // Aurrez sortutako datuak (npm run build:data)
 export const fetchSubclasses = () => fetchJson('data/kategoriak.json');
 

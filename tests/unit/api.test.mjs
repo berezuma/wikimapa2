@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    fetchJson, searchArticles, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
+    fetchJson, searchArticles, fetchThumbnails, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
     fetchPage, findLocationViaWikidata
 } from '../../js/api.js';
 
@@ -134,6 +134,22 @@ test('fetchOverviewArticles: motak aukerakoak dira', async () => {
             { title: 'Ibaia', lat: 43.1, lon: -2.5, types: [] },
         ],
     });
+});
+
+test('fetchThumbnails: 50eko sortak, irudirik gabekoak null', async () => {
+    const titles = Array.from({ length: 60 }, (_, i) => `Artikulua ${i}`);
+    const calls = mockFetch((url) => {
+        const chunk = url.searchParams.get('titles').split('|');
+        return { query: { pages: Object.fromEntries(chunk.map((title, i) => [String(i), {
+            title, ...(title.endsWith('1') ? { thumbnail: { source: `https://x/${i}.jpg` } } : {}),
+        }])) } };
+    });
+    const thumbnails = await fetchThumbnails(titles);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].searchParams.get('titles').split('|').length, 50);
+    assert.equal(thumbnails.size, 60);
+    assert.ok(thumbnails.get('Artikulua 1').startsWith('https://'));
+    assert.equal(thumbnails.get('Artikulua 2'), null);
 });
 
 test('fetchPage: orria ez badago null', async () => {

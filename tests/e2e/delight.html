@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Sarrera, argazkiak eta Harritu nazazu</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, sleep, loadApp } from './harness.js';
+
+run(async () => {
+    // Sarrera: parametrorik gabe eta lehen bisitan (proba bakoitzak profil berria du)
+    const first = await loadApp('');
+    const introBox = first.d.getElementById('intro');
+    check('sarrera agertzen da lehen bisitan', await until(() => !introBox.classList.contains('hidden')));
+    const counted = await until(() => /^\d{2}\.\d{3}$/.test(first.d.getElementById('introCount').textContent) && first.d.getElementById('introCount').textContent, 5000);
+    check('kontagailuak artikulu guztiak zenbatzen ditu', counted, counted);
+    check('sarrera desagertzen da', await until(() => introBox.classList.contains('hidden'), 8000));
+
+    // Bigarren bisitan ez (localStorage)
+    const second = await loadApp('');
+    await sleep(2500);
+    check('bigarren bisitan ez dago sarrerarik', second.d.getElementById('intro').classList.contains('hidden'));
+
+    // Argazki-markatzaileak zoom 17an
+    const city = await loadApp('?lat=43.2687&lon=-2.934&zoom=17');
+    const photos = await until(() => city.d.querySelectorAll('.wm-photo img').length, 30000);
+    check('argazki-markatzaileak zoom 17an', photos > 0, photos);
+
+    // Harritu nazazu: artikulu batera hegan eta txartela irekita
+    const surprise = await loadApp('?lat=43.0&lon=-2.5&zoom=9');
+    await until(() => surprise.d.querySelector('.marker-cluster'));
+    surprise.d.getElementById('surpriseButton').click();
+    const title = await until(() => surprise.d.querySelector('.leaflet-popup-content h3')?.textContent, 30000);
+    check('Harritu nazazu: artikulu baten txartela irekitzen da', title, title);
+});
+</script>
+</body>
+</html>

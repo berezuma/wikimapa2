@@ -1,7 +1,8 @@
 // Mapa, markatzaileak eta interfazea. Datuak api.js-tik datoz.
 import {
     fetchJson, isAbortError, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories,
-    fetchSubclasses, fetchOverviewArticles, fetchSummary, searchArticles, fetchPage, findLocationViaWikidata
+    fetchSubclasses, fetchOverviewArticles, fetchSummary, searchArticles, fetchPage, findLocationViaWikidata,
+    fetchThumbnails
 } from './api.js';
 
 const BORDER_DATA_URL = "ehmuga.json";
@@ -15,6 +16,9 @@ const closeFilterButton = document.getElementById('closeFilterButton');
 const filterPanel = document.getElementById('filterPanel');
 const locateButton = document.getElementById('locateButton');
 const shareButton = document.getElementById('shareButton');
+const surpriseButton = document.getElementById('surpriseButton');
+const intro = document.getElementById('intro');
+const introCount = document.getElementById('introCount');
 const categoryFilters = document.getElementById('category-filters');
 const clearFilterButton = document.getElementById('clearFilterButton');
 const filterCount = document.getElementById('filterCount');
@@ -47,6 +51,19 @@ const numberParam = (params, name, min, max, fallback) => {
 };
 
 const urlParams = new URLSearchParams(window.location.search);
+
+// Sarrera animatua: lehen bisitan, parametrorik gabe (partekatutako esteketan ez) eta mugimendua murriztu gabe
+const INTRO_KEY = 'wikimapa-sarrera-ikusita';
+const introActive = (() => {
+    if (window.location.search || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    try {
+        if (localStorage.getItem(INTRO_KEY)) return false;
+        localStorage.setItem(INTRO_KEY, '1');
+    } catch {
+        // localStorage-rik gabe: sarrera erakutsi (ezin da gogoratu)
+    }
+    return true;
+})();
 const lat = numberParam(urlParams, 'lat', -90, 90, 43.0);
 const lon = numberParam(urlParams, 'lon', -180, 180, -2.5);
 const zoom = Math.round(numberParam(urlParams, 'zoom', 0, 19, 9));
@@ -121,7 +138,7 @@ const drawBasqueCountryBorders = async () => {
         const ehMugaData = await fetchJson(BORDER_DATA_URL);
         if (Array.isArray(ehMugaData) && ehMugaData.length > 0) {
             // Koordenatuak [latitudea, longitudea] formatuan daude
-            L.polygon(ehMugaData, {
+            const border = L.polygon(ehMugaData, {
                 color: '#D50000',
                 weight: 2,
                 opacity: 0.8,
@@ -129,6 +146,7 @@ const drawBasqueCountryBorders = async () => {
                 fillOpacity: 0.04,
                 interactive: false
             }).addTo(map);
+            if (introActive) animateBorder(border);
         }
     } catch (error) {
         console.error("Errorea Euskal Herriko mugak marraztean:", error);
@@ -275,7 +293,11 @@ const clearHighlight = () => {
 // Markatzaileak eguneratu: ikuspegitik kanpokoak kendu, berriak gehitu eta daudenak mantendu.
 // Popupa irekita duen markatzailea ez da inoiz kentzen (autoPan-ek mugimendua eragiten du).
 // Multzokatzeak milaka markatzaile izan ditzake (bista orokorra), beraz sortetan gehitu eta kentzen dira.
-const renderArticles = (articles) => {
+const renderArticles = (sourceArticles) => {
+    // Ainguratutako artikulua (Harritu nazazu): datu-iturriak ez badu ere, mapan egon dadin
+    const articles = pinnedArticle && !sourceArticles.some(article => article.title === pinnedArticle.title)
+        ? [...sourceArticles, pinnedArticle]
+        : sourceArticles;
     const visibleTitles = new Set(articles.map(article => article.title));
 
     const toRemove = [];
@@ -303,6 +325,7 @@ const renderArticles = (articles) => {
         if (pendingPopupTitle === selectedTitle && openPopupFor(selectedTitle)) pendingPopupTitle = null;
         selectedTitle = null;
     }
+    updatePhotoMarkers();
 };
 
 // Partekatzeko esteka: popupa irekita duen artikulua
@@ -327,6 +350,57 @@ const markerIcons = Object.fromEntries(GROUPS.map(group => [group, L.divIcon({
 let groupTypes = null; // [[taldea, Set(motak)], ...]
 let typesByTitle = null;
 
+// Zoom honetatik aurrera (multzokatzerik gabe), irudia duten artikuluak argazki biribil gisa
+const PHOTO_ZOOM = 17;
+const thumbnails = new Map(); // izenburua -> URL edo null
+let photoController = null;
+let pinnedArticle = null;
+
+const markerIconFor = (article) => {
+    const group = articleGroup(article);
+    const photo = map.getZoom() >= PHOTO_ZOOM ? thumbnails.get(article.title) : null;
+    if (!photo) return { key: group, icon: markerIcons[group] };
+    const image = document.createElement('img');
+    image.src = photo;
+    image.alt = '';
+    return {
+        key: `${group}|${photo}`,
+        icon: L.divIcon({ className: `wm-photo wm-${group}`, html: image, iconSize: [44, 44], popupAnchor: [0, -20], tooltipAnchor: [0, -20] }),
+    };
+};
+
+// Ikonoa aldatu bakarrik behar denean (argazkiak berriro ez sortzeko)
+const refreshMarkerIcon = (marker) => {
+    const { key, icon } = markerIconFor(marker.article);
+    if (marker.iconKey !== key) {
+        marker.iconKey = key;
+        marker.setIcon(icon);
+    }
+};
+
+const updatePhotoMarkers = async () => {
+    photoController?.abort();
+    if (map.getZoom() < PHOTO_ZOOM) {
+        markersByTitle.forEach(marker => { if (marker.iconKey?.includes('|')) refreshMarkerIcon(marker); });
+        return;
+    }
+    const bounds = map.getBounds().pad(0.1);
+    const visible = [...markersByTitle.values()].filter(marker => bounds.contains(marker.getLatLng()));
+    const missing = visible.map(marker => marker.article.title).filter(title => !thumbnails.has(title)).slice(0, 200);
+    if (missing.length) {
+        const controller = new AbortController();
+        photoController = controller;
+        try {
+            (await fetchThumbnails(missing, controller.signal)).forEach((url, title) => thumbnails.set(title, url));
+        } catch (error) {
+            if (!isAbortError(error)) console.error("Errorea irudiak kargatzean:", error);
+            return;
+        }
+    }
+    visible.forEach(refreshMarkerIcon);
+};
+map.on('zoomend', updatePhotoMarkers);
+
 const articleGroup = (article) => {
     const types = article.types?.length ? article.types : typesByTitle?.get(article.title);
     if (!types || !groupTypes) return 'besteak';
@@ -349,15 +423,17 @@ const loadMarkerGroups = async () => {
             }
             return [heading.dataset.group, typeSet];
         });
-        markersByTitle.forEach(marker => marker.setIcon(markerIcons[articleGroup(marker.article)]));
+        markersByTitle.forEach(refreshMarkerIcon);
     } catch (error) {
         console.error("Errorea markatzaileen taldeak kargatzean:", error);
     }
 };
 
 const createMarker = (article) => {
-    const marker = L.marker([article.lat, article.lon], { icon: markerIcons[articleGroup(article)] });
+    const { key, icon } = markerIconFor(article);
+    const marker = L.marker([article.lat, article.lon], { icon });
     marker.article = article;
+    marker.iconKey = key;
     // Edukia popupa irekitzean sortzen da (bista orokorrak milaka markatzaile ditu)
     marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || null), POPUP_OPTIONS);
     marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
@@ -542,6 +618,7 @@ const debouncedSearch = () => {
 const selectArticle = async (title) => {
     searchController?.abort();
     pendingPopupTitle = null;
+    pinnedArticle = null;
     indirectLayer.clearLayers();
     clearHighlight();
     searchInput.value = title;
@@ -716,6 +793,40 @@ clearFilterButton.addEventListener('click', () => {
 
 map.on('moveend', updateCategoryCounts);
 
+// Harritu nazazu: Euskal Herriko artikulu aleatorio batera hegan egin eta txartela ireki.
+// Iragazkiak aktibo badaude, horien artean; bestela, kategoriaren bat duten artikuluen artean (interesgarriagoak).
+const surpriseMe = async () => {
+    surpriseButton.classList.remove('spinning');
+    void surpriseButton.offsetWidth; // animazioa berrabiarazteko
+    surpriseButton.classList.add('spinning');
+    try {
+        const [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
+        let pool = overview.articles;
+        if (activeCategoryFilters.size > 0) {
+            pool = filterByCategories(pool, [...activeCategoryFilters], subclasses);
+        } else if (groupTypes) {
+            pool = pool.filter(article => articleGroup(article) !== 'besteak');
+        }
+        if (pool.length === 0) {
+            showMapMessage('Ez dago artikulurik iragazki hauekin.', 3000);
+            return;
+        }
+        const article = pool[Math.floor(Math.random() * pool.length)];
+        indirectLayer.clearLayers();
+        clearHighlight();
+        map.closePopup();
+        searchInput.value = '';
+        pinnedArticle = article;
+        selectedTitle = article.title;
+        pendingPopupTitle = article.title;
+        map.flyTo([article.lat, article.lon], PHOTO_ZOOM, { duration: 2.5 });
+    } catch (error) {
+        console.error("Errorea ausazko artikulua aukeratzean:", error);
+        showMapMessage('Errorea gertatu da. Saiatu berriro.', 3000);
+    }
+};
+surpriseButton.addEventListener('click', surpriseMe);
+
 // Legenda (ordenagailuan; mugikorrean iragazki-paneleko izenburuek erakusten dituzte koloreak)
 const legend = L.control({ position: 'bottomleft' });
 legend.onAdd = () => {
@@ -729,6 +840,52 @@ legend.onAdd = () => {
     return box;
 };
 legend.addTo(map);
+
+// Muga marrazten den animazioa (SVG trazuaren luzera), gero betegarria
+const animateBorder = (border) => {
+    const path = border.getElement();
+    if (!path?.getTotalLength) return;
+    const length = path.getTotalLength();
+    path.style.strokeDasharray = `${length}`;
+    path.style.strokeDashoffset = `${length}`;
+    path.style.fillOpacity = '0';
+    path.getBoundingClientRect(); // hasierako egoera aplikatzeko
+    path.style.transition = 'stroke-dashoffset 2.2s ease-in-out, fill-opacity 0.8s ease 2s';
+    path.style.strokeDashoffset = '0';
+    path.style.fillOpacity = '';
+    // Zoomak trazuaren luzera aldatzen du: amaitzean estiloak kendu
+    setTimeout(() => {
+        path.style.transition = '';
+        path.style.strokeDasharray = '';
+        path.style.strokeDashoffset = '';
+    }, 3000);
+};
+
+// Kontagailua 0tik artikulu-kopururaino, eta gero txartela desagertzen da
+const runIntro = async () => {
+    const mapElement = document.getElementById('map');
+    mapElement.classList.add('wm-intro-running');
+    setTimeout(() => mapElement.classList.remove('wm-intro-running'), 1800);
+    try {
+        const { articles } = await loadOverview();
+        intro.classList.remove('hidden');
+        const total = articles.length;
+        const start = performance.now();
+        const duration = 2000;
+        const tick = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - t, 3);
+            introCount.textContent = formatNumber(Math.round(total * eased));
+            if (t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        setTimeout(() => intro.classList.add('leaving'), 3200);
+        setTimeout(() => intro.classList.add('hidden'), 3900);
+    } catch {
+        mapElement.classList.remove('wm-intro-running');
+    }
+};
+if (introActive) runIntro();
 
 // Hasierako datu karga; ?artikulua=… badago, artikulu hori hautatu
 updateMapData();
