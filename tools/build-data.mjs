@@ -9,6 +9,7 @@
 //    artikulua dutenak baina euskaraz ez ("Zer falta da" geruza). Gertaerak (Q1190554) kanpoan.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { groupMatcher, removeDuplicates } from './missing-dedupe.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
@@ -228,7 +229,13 @@ if (!only || only === 'artikuluak') {
 }
 if (!only || only === 'falta') {
     console.log('Falta direnak...');
-    const missing = await buildMissing();
+    const candidates = await buildMissing();
+    // Bikoiztuak kentzeko, euskarazko artikuluak eta kategoriak (lehen urratsetan sortuak edo diskoan daudenak)
+    const { articles } = JSON.parse(await readFile(`${ROOT}data/artikuluak.json`, 'utf8'));
+    const categories = JSON.parse(await readFile(`${ROOT}data/kategoriak.json`, 'utf8'));
+    const groupOf = groupMatcher(await readFile(`${ROOT}index.html`, 'utf8'), categories);
+    const missing = removeDuplicates(candidates, articles, groupOf);
+    console.log(`  ${candidates.length - missing.length} bikoiztu kanpoan (euskarazko artikulua inguruan, izen berarekin)`);
     await writeFile(`${ROOT}data/falta.json`, formatMissing({ generated: today, items: missing }));
     console.log(`  ${missing.length} falta`);
 }
