@@ -130,7 +130,12 @@ const showMapMessage = (text, timeout = 0) => {
 };
 const hideMapMessage = () => {
     clearTimeout(mapMessageTimer);
+    mapMessageTimer = null;
     mapMessage.classList.add('hidden');
+};
+// Mapa eguneratzean: egoera-mezuak (iraunkorrak) bakarrik ezkutatu, ez "esteka kopiatu da" bezalakoak
+const hideStatusMessage = () => {
+    if (!mapMessageTimer) hideMapMessage();
 };
 
 const plainBounds = (bounds) => ({
@@ -186,7 +191,7 @@ const updateMapData = async () => {
     updateController?.abort();
     const controller = new AbortController();
     updateController = controller;
-    hideMapMessage();
+    hideStatusMessage();
 
     try {
         if (timelineIndex !== null) {
@@ -258,8 +263,14 @@ const boundsAreaKm2 = (bounds) => {
     return (width * height) / 1e6;
 };
 
+// Azken geosearch-a ({ bounds, articles }): popupen autoPan-ak eta mugimendu txikiek ez dute berriz bilatzen
+let geosearchCache = null;
+
 const fetchGeosearchData = async (signal) => {
     const bounds = map.getBounds();
+    if (geosearchCache && geosearchCache.bounds.contains(bounds)) {
+        return { articles: geosearchCache.articles, partial: false };
+    }
     const fetchLargeView = async () => {
         const center = map.getCenter();
         // Bista orokorra, erdigunea datu estatikoen eremuan badago
@@ -274,8 +285,13 @@ const fetchGeosearchData = async (signal) => {
     };
 
     if (boundsAreaKm2(bounds) > GEOSEARCH_MAX_AREA_KM2) return fetchLargeView();
+    const padded = bounds.pad(0.25);
+    const queryBounds = boundsAreaKm2(padded) <= GEOSEARCH_MAX_AREA_KM2 ? padded : bounds;
     try {
-        return { articles: await geosearchBox(plainBounds(bounds), signal), partial: false };
+        const articles = await geosearchBox(plainBounds(queryBounds), signal);
+        // 500eko mugara iritsiz gero, eremu zabalean falta daitezke artikuluak: ez gorde
+        geosearchCache = articles.length < 500 ? { bounds: queryBounds, articles } : null;
+        return { articles, partial: false };
     } catch (error) {
         if (error.code === 'toobig') return fetchLargeView();
         throw error;
@@ -353,6 +369,10 @@ const trackPopup = (marker, title) => {
     marker.on('popupclose', () => {
         if (openArticleTitle === title) openArticleTitle = null;
         if (marker.getTooltip()) marker.openTooltip();
+        if (pendingMoveUpdate && !openArticleTitle) {
+            pendingMoveUpdate = false;
+            debouncedUpdate();
+        }
     });
 };
 
@@ -454,6 +474,8 @@ const createMarker = (article) => {
     // Edukia popupa irekitzean sortzen da (bista orokorrak milaka markatzaile ditu)
     marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || null), POPUP_OPTIONS);
     marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
+    // Laburpena aurrez kargatu (hatza/sagua markatzailean jartzean), popupa irekitzean prest egon dadin
+    marker.on('mouseover mousedown', () => loadSummary(article.title).catch(() => {}));
     trackPopup(marker, article.title);
     return marker;
 };
@@ -470,13 +492,24 @@ const showIndirectMarker = (info) => {
     return marker;
 };
 
+const summaryPromises = new Map();
+const loadSummary = (title) => {
+    if (!summaryPromises.has(title)) {
+        summaryPromises.set(title, fetchSummary(title).catch((error) => {
+            summaryPromises.delete(title);
+            throw error;
+        }));
+    }
+    return summaryPromises.get(title);
+};
+
 const fetchAndDisplaySummary = async (article, marker, locTitle = null) => {
     const popup = marker.getPopup();
     if (summaryCache[article.title]) {
         popup.setContent(createPopupContent(article, summaryCache[article.title], locTitle)); return;
     }
     try {
-        const summary = await fetchSummary(article.title);
+        const summary = await loadSummary(article.title);
         if (summary) {
             summaryCache[article.title] = summary;
             popup.setContent(createPopupContent(article, summary, locTitle));
@@ -516,7 +549,14 @@ const createPopupContent = (article, summaryData, locTitle = null) => {
     if (summaryData) {
         body.appendChild(createElement('p', 'text-sm text-gray-700 leading-relaxed line-clamp-5 m-0', summaryData.extract));
     } else {
-        body.appendChild(createElement('p', 'text-sm text-gray-400 m-0', 'Laburpena kargatzen…'));
+        // Eskeletoa: azken txartelaren tamaina gutxi gorabehera (irudia + lerroak), laburpena iristean
+        // tamaina ez aldatzeko eta mapa berriz ez mugitzeko (autoPan)
+        body.setAttribute('aria-busy', 'true');
+        body.appendChild(createElement('div', 'w-20 h-20 rounded-md shrink-0 bg-gray-200 animate-pulse'));
+        const lines = createElement('div', 'flex-grow space-y-2 pt-1');
+        lines.appendChild(createElement('span', 'sr-only', 'Laburpena kargatzen…'));
+        ['w-full', 'w-full', 'w-5/6', 'w-2/3'].forEach(width => lines.appendChild(createElement('div', `h-3 ${width} rounded bg-gray-200 animate-pulse`)));
+        body.appendChild(lines);
     }
     container.appendChild(body);
 
@@ -634,6 +674,7 @@ const debouncedSearch = () => {
 
 const selectArticle = async (title) => {
     searchController?.abort();
+    map.closePopup();
     pendingPopupTitle = null;
     pinnedArticle = null;
     indirectLayer.clearLayers();
@@ -678,8 +719,16 @@ const selectArticle = async (title) => {
     }
 };
 
+// Popup bat irekita dagoen bitartean (autoPan, edo irakurtzen ari da), mapa mugitzeak ez ditu markatzaileak
+// aldatzen: lan alferrikakoa da, eta markercluster-ek popupa duen markatzailea multzo batean sar dezake
+// (popupa itxiz). Eguneraketa popupa ixtean egiten da. Iragazkiek eta denbora-lerroak zuzenean eguneratzen dute.
+let pendingMoveUpdate = false;
 const debouncedUpdate = () => {
     clearTimeout(debounceTimer);
+    if (openArticleTitle) {
+        pendingMoveUpdate = true;
+        return;
+    }
     debounceTimer = setTimeout(updateMapData, 500);
 };
 
@@ -696,8 +745,10 @@ const openFilterPanel = () => {
     filterPanel.inert = false;
     filterPanel.classList.add('open');
     filterButton.setAttribute('aria-expanded', 'true');
-    categoryFilters.querySelector('input')?.focus();
-    updateCategoryCounts();
+    // preventScroll: mugikorretan fokuak ez dezala orria mugitu animazioaren erdian
+    categoryFilters.querySelector('input')?.focus({ preventScroll: true });
+    // Kopuruak irristatze-animazioa (0,3 s) amaitu ondoren kalkulatu, animazioa leuna izan dadin
+    setTimeout(updateCategoryCounts, 320);
 };
 const closeFilterPanel = () => {
     const hadFocus = filterPanel.contains(document.activeElement);
@@ -773,6 +824,11 @@ const renderActiveFilters = () => {
 // Kategoria bakoitzeko kopurua uneko ikuspegian, datu estatikoekin (eremutik kanpo ez da erakusten)
 const updateCategoryCounts = async () => {
     if (!filterPanel.classList.contains('open')) return;
+    // Datuak oraindik kargatzen ari badira (mugikorreko sare motelean), "…"
+    categoryInputs().forEach(input => {
+        const count = input.parentElement.querySelector('.category-count');
+        if (!count.textContent) count.textContent = '…';
+    });
     let overview = null;
     let subclasses = null;
     try {

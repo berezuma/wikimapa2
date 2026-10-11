@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    fetchJson, searchArticles, fetchThumbnails, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
+    fetchJson, searchArticles, fetchThumbnails, fetchSummary, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories, fetchOverviewArticles,
     fetchPage, findLocationViaWikidata
 } from '../../js/api.js';
 
@@ -153,6 +153,15 @@ test('fetchThumbnails: 50eko sortak, irudirik gabekoak null', async () => {
     assert.equal(thumbnails.size, 60);
     assert.ok(thumbnails.get('Artikulua 1').startsWith('https://'));
     assert.equal(thumbnails.get('Artikulua 2'), null);
+});
+
+test('fetchSummary: REST APIa; 404 bada null', async () => {
+    const calls = mockFetch((url) => (url.pathname.endsWith('Ez_dago')
+        ? { __status: 404 }
+        : { type: 'standard', extract: 'Bilbo hiria da.', thumbnail: { source: 'https://x/b.jpg' } }));
+    assert.deepEqual(await fetchSummary('Bilboko Guggenheim'), { extract: 'Bilbo hiria da.', imageSrc: 'https://x/b.jpg' });
+    assert.equal(calls[0].pathname, '/api/rest_v1/page/summary/Bilboko_Guggenheim');
+    assert.equal(await fetchSummary('Ez dago'), null);
 });
 
 test('fetchPage: orria ez badago null', async () => {

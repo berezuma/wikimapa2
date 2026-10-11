@@ -4,6 +4,7 @@ const WIKIPEDIA_API_ENDPOINT = "https://eu.wikipedia.org/w/api.php";
 const WIKIDATA_SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
 const WIKIDATA_API_ENDPOINT = "https://www.wikidata.org/w/api.php";
 const WIKIPEDIA_ARTICLE_PREFIX = "https://eu.wikipedia.org/wiki/";
+const WIKIPEDIA_SUMMARY_ENDPOINT = "https://eu.wikipedia.org/api/rest_v1/page/summary/";
 
 // Geosearch-en muga: 10 km-ko erradioa gehienez
 const GEOSEARCH_MAX_RADIUS_M = 10000;
@@ -17,7 +18,11 @@ const buildUrl = (endpoint, params) => {
 // fetch + HTTP eta APIaren erroreen egiaztapena
 export const fetchJson = async (url, options = {}) => {
     const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+    if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}: ${url}`);
+        error.status = response.status;
+        throw error;
+    }
     const data = await response.json();
     if (data && data.error) {
         const error = new Error(data.error.info || data.error.code);
@@ -112,8 +117,20 @@ export const fetchAreaArticles = async (bounds, signal) => {
 };
 
 // categories: data-category balioak ("Q1" edo "Q1 Q2"); subclasses: data/kategoriak.json ({ Q-id: [zenbakiak] })
+// Kategoria-konbinazio bakoitzaren mota-multzoa behin bakarrik eraikitzen da (kopuruak askotan kalkulatzen dira)
+const wantedTypesCache = new WeakMap();
+const wantedTypes = (categories, subclasses) => {
+    if (!wantedTypesCache.has(subclasses)) wantedTypesCache.set(subclasses, new Map());
+    const cache = wantedTypesCache.get(subclasses);
+    const key = categories.join(',');
+    if (!cache.has(key)) {
+        cache.set(key, new Set(categories.flatMap(category => category.split(/\s+/)).flatMap(qid => subclasses[qid] || [])));
+    }
+    return cache.get(key);
+};
+
 export const filterByCategories = (articles, categories, subclasses) => {
-    const wanted = new Set(categories.flatMap(category => category.split(/\s+/)).flatMap(qid => subclasses[qid] || []));
+    const wanted = wantedTypes(categories, subclasses);
     return articles.filter(article => article.types.some(type => wanted.has(type)));
 };
 
@@ -146,11 +163,15 @@ export const fetchOverviewArticles = async () => {
     };
 };
 
+// Laburpena REST APItik: CDN-an cachean dago (action APIa baino azkarragoa). null orria ez badago.
 export const fetchSummary = async (title) => {
-    const data = await wikipediaApi({ action: 'query', titles: title, redirects: '1', prop: 'extracts|pageimages', exintro: 'true', explaintext: 'true', pithumbsize: '200' });
-    const page = Object.values(data.query?.pages || {})[0];
-    if (!page || page.missing !== undefined) return null;
-    return { extract: page.extract || 'Ez da laburpenik aurkitu.', imageSrc: page.thumbnail?.source };
+    try {
+        const data = await fetchJson(WIKIPEDIA_SUMMARY_ENDPOINT + encodeURIComponent(title.replace(/ /g, '_')));
+        return { extract: data.extract || 'Ez da laburpenik aurkitu.', imageSrc: data.thumbnail?.source };
+    } catch (error) {
+        if (error.status === 404) return null;
+        throw error;
+    }
 };
 
 // Izenburu-hasieraren araberako bilaketa, deskribapen, irudi txiki eta koordenatuekin (eskaera bakarra)
