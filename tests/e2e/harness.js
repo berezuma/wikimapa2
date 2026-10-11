@@ -40,6 +40,13 @@ export const type = (w, input, text) => {
     input.dispatchEvent(new w.Event('input'));
 };
 
+// Kategoria-iragazkiak markatu (beste guztiak kenduta); aldaketa-gertaerak berehala aplikatzen ditu
+export const setCategories = (d, ...categories) => {
+    const inputs = [...d.querySelectorAll('#category-filters input')];
+    inputs.forEach(input => { input.checked = categories.includes(input.dataset.category); });
+    inputs[0].dispatchEvent(new d.defaultView.Event('change', { bubbles: true }));
+};
+
 export const run = async (fn) => {
     try {
         await fn();

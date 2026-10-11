@@ -4,12 +4,9 @@
 <body>
 <pre id="result"></pre>
 <script type="module">
-import { run, check, until, sleep, loadApp } from './harness.js';
+import { run, check, until, sleep, loadApp, setCategories } from './harness.js';
 
-const applyIn = (d, ...categories) => {
-    d.querySelectorAll('#category-filters input').forEach(cb => { cb.checked = categories.includes(cb.dataset.category); });
-    d.getElementById('applyFilterButton').click();
-};
+const applyIn = setCategories;
 
 run(async () => {
     const { d } = await loadApp('?lat=43.2569&lon=-2.9236&zoom=14');

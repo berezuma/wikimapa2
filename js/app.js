@@ -16,8 +16,10 @@ const filterPanel = document.getElementById('filterPanel');
 const locateButton = document.getElementById('locateButton');
 const shareButton = document.getElementById('shareButton');
 const categoryFilters = document.getElementById('category-filters');
-const applyFilterButton = document.getElementById('applyFilterButton');
 const clearFilterButton = document.getElementById('clearFilterButton');
+const filterCount = document.getElementById('filterCount');
+const activeFiltersBox = document.getElementById('activeFilters');
+const categoryCountsNote = document.getElementById('categoryCountsNote');
 const mapMessage = document.getElementById('mapMessage');
 const mapMessageText = document.getElementById('mapMessageText');
 
@@ -56,6 +58,12 @@ L.control.zoom({ position: 'bottomleft' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
+// Egilea eta lizentzia Leaflet-en aitortzan (lehen oin batek OSM-ren aitortza estaltzen zuen)
+map.attributionControl.setPrefix(
+    'Beñat Erezumak egina · <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.eu" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a> · ' +
+    '<a href="https://eu.wikipedia.org" target="_blank" rel="noopener noreferrer">Wikipedia</a> · ' +
+    '<a href="https://leafletjs.com" target="_blank" rel="noopener noreferrer">Leaflet</a>'
+);
 
 // Markatzaileak multzokatuta; zoom 17tik aurrera banan-banan
 const markersLayer = L.markerClusterGroup({
@@ -74,12 +82,17 @@ let searchDebounceTimer;
 let updateController = null;
 let searchController = null;
 let mapMessageTimer;
+let loaderTimer;
+let filterDebounceTimer;
 
+// Adierazlea 300 ms-tik gorako kargetan bakarrik agertzen da (bestela keinuka ibiliko litzateke)
 const showLoader = (text = "Artikuluak kargatzen...") => {
     loaderText.textContent = text;
-    loader.classList.remove('hidden');
+    clearTimeout(loaderTimer);
+    loaderTimer = setTimeout(() => loader.classList.remove('hidden'), 300);
 };
 const hideLoader = () => {
+    clearTimeout(loaderTimer);
     loader.classList.add('hidden');
 };
 // timeout ematen bada, mezua automatikoki ezkutatzen da
@@ -485,6 +498,7 @@ const openFilterPanel = () => {
     filterPanel.classList.add('open');
     filterButton.setAttribute('aria-expanded', 'true');
     categoryFilters.querySelector('input')?.focus();
+    updateCategoryCounts();
 };
 const closeFilterPanel = () => {
     const hadFocus = filterPanel.contains(document.activeElement);
@@ -522,21 +536,67 @@ shareButton.addEventListener('click', () => {
         .catch(() => showMapMessage(url, 8000));
 });
 
-applyFilterButton.addEventListener('click', () => {
-    activeCategoryFilters.clear();
-    categoryFilters.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
-        activeCategoryFilters.add(cb.dataset.category);
+const categoryInputs = () => [...categoryFilters.querySelectorAll('input[type="checkbox"]')];
+const categoryLabel = (input) => input.parentElement.querySelector('span').textContent.trim();
+
+// Iragazki aktiboak: botoiko zenbakia eta bilatzailearen azpiko etiketak (✕ sakatuta kentzen dira)
+const renderActiveFilters = () => {
+    const checked = categoryInputs().filter(input => input.checked);
+    filterCount.textContent = String(checked.length);
+    filterCount.classList.toggle('hidden', checked.length === 0);
+    activeFiltersBox.classList.toggle('hidden', checked.length === 0);
+    activeFiltersBox.replaceChildren(...checked.map(input => {
+        const chip = createElement('button', 'inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-xs font-semibold hover:bg-blue-100');
+        chip.type = 'button';
+        chip.setAttribute('aria-label', `Kendu iragazkia: ${categoryLabel(input)}`);
+        chip.append(categoryLabel(input), createElement('span', 'text-blue-400', '✕'));
+        chip.addEventListener('click', () => {
+            input.checked = false;
+            applyFilters();
+        });
+        return chip;
+    }));
+};
+
+// Kategoria bakoitzeko kopurua uneko ikuspegian, datu estatikoekin (eremutik kanpo ez da erakusten)
+const updateCategoryCounts = async () => {
+    if (!filterPanel.classList.contains('open')) return;
+    let overview = null;
+    let subclasses = null;
+    try {
+        [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
+    } catch {
+        // kopururik gabe jarraitu
+    }
+    const bounds = map.getBounds();
+    const covered = overview && subclasses && overviewCovers(overview, map.getCenter());
+    const visible = covered ? overview.articles.filter(article => bounds.contains([article.lat, article.lon])) : [];
+    categoryInputs().forEach(input => {
+        const count = input.parentElement.querySelector('.category-count');
+        count.textContent = covered ? filterByCategories(visible, [input.dataset.category], subclasses).length.toLocaleString('eu') : '';
     });
-    closeFilterPanel();
-    updateMapData();
+    categoryCountsNote.classList.toggle('hidden', !covered);
+};
+
+// Kategoriak markatzean berehala aplikatzen dira (debounce txiki batekin, hainbat azkar markatzeko)
+const applyFilters = () => {
+    activeCategoryFilters.clear();
+    categoryInputs().filter(input => input.checked).forEach(input => activeCategoryFilters.add(input.dataset.category));
+    renderActiveFilters();
+    clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = setTimeout(updateMapData, 150);
+};
+
+categoryFilters.addEventListener('change', (event) => {
+    if (event.target.matches('input[type="checkbox"]')) applyFilters();
 });
 
 clearFilterButton.addEventListener('click', () => {
-    categoryFilters.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-    activeCategoryFilters.clear();
-    closeFilterPanel();
-    updateMapData();
+    categoryInputs().forEach(input => { input.checked = false; });
+    applyFilters();
 });
+
+map.on('moveend', updateCategoryCounts);
 
 // Hasierako datu karga
 updateMapData();

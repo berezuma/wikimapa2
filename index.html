@@ -110,15 +110,18 @@
         <div class="flex items-center space-x-2">
             <div class="bg-white bg-opacity-90 backdrop-blur-sm p-3 sm:p-4 shadow-lg rounded-lg flex-grow">
                 <div class="flex items-center mb-2">
-                    <h1 class="text-lg sm:text-xl font-bold text-gray-800">Euskarazko Wikipediaren Mapa</h1>
+                    <h1 class="text-base sm:text-xl font-bold text-gray-800 leading-tight">Euskarazko Wikipediaren Mapa</h1>
                 </div>
                 <div class="relative">
                     <input type="text" id="searchInput" placeholder="Bilatu artikulu bat..." aria-label="Bilatu artikulu bat" role="combobox" aria-autocomplete="list" aria-controls="searchResults" aria-expanded="false" autocomplete="off" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <div id="searchResults" role="listbox" aria-label="Bilaketaren emaitzak" class="hidden absolute mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-30"></div>
                 </div>
+                <!-- Iragazki aktiboak (JSk betetzen du) -->
+                <div id="activeFilters" aria-label="Iragazki aktiboak" class="hidden flex flex-wrap gap-1 mt-2"></div>
             </div>
-            <button id="filterButton" class="map-button" aria-label="Iragazkiak" aria-controls="filterPanel" aria-expanded="false">
+            <button id="filterButton" class="map-button relative" aria-label="Iragazkiak" aria-controls="filterPanel" aria-expanded="false">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+                <span id="filterCount" class="hidden absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 rounded-full bg-blue-600 text-white text-xs font-bold leading-5 text-center"></span>
             </button>
         </div>
     </header>
@@ -142,66 +145,58 @@
         <div id="filter-content">
             <div id="category-filters" class="space-y-1 text-sm text-gray-700">
                 <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Kultura eta Ondarea</p>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q33506"> Museoak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q23413"> Gazteluak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q1785071"> Gotorlekuak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q16560"> Jauregiak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q16970"> Elizak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q56750657 Q108325"> Ermitak eta kaperak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q44613"> Monasterioak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q12518"> Dorreak eta dorretxeak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q4989906"> Monumentuak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q839954"> Arkeologia-guneak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q101659"> Trikuharriak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q12280"> Zubiak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q39715"> Itsasargiak</label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q33506"> <span>Museoak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q23413"> <span>Gazteluak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q1785071"> <span>Gotorlekuak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q16560"> <span>Jauregiak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q16970"> <span>Elizak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q56750657 Q108325"> <span>Ermitak eta kaperak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q44613"> <span>Monasterioak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q12518"> <span>Dorreak eta dorretxeak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q4989906"> <span>Monumentuak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q839954"> <span>Arkeologia-guneak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q101659"> <span>Trikuharriak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q12280"> <span>Zubiak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q39715"> <span>Itsasargiak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
                 
                 <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Natura eta Geografia</p>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q8502"> Mendiak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q35509"> Kobazuloak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q40080"> Hondartzak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q4022"> Ibaiak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q23397 Q131681"> Aintzirak eta urtegiak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q34038"> Ur-jauziak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q473972"> Naturagune babestuak</label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q8502"> <span>Mendiak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q35509"> <span>Kobazuloak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q40080"> <span>Hondartzak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q4022"> <span>Ibaiak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q23397 Q131681"> <span>Aintzirak eta urtegiak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q34038"> <span>Ur-jauziak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q473972"> <span>Naturagune babestuak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
                 
                 <p class="font-semibold text-gray-500 text-xs uppercase pt-3">Herriak eta Azpiegiturak</p>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q486972"> Herriak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q44782"> Portuak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q3914"> Eskolak</label>
-                <label class="flex items-center"><input type="checkbox" class="mr-2" data-category="Q483110"> Estadioak</label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q486972"> <span>Herriak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q44782"> <span>Portuak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q3914"> <span>Eskolak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q483110"> <span>Estadioak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
             </div>
         </div>
-        <div class="mt-4 pt-4 border-t border-gray-200 flex space-x-2">
-            <button id="applyFilterButton" class="flex-grow bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Aplikatu</button>
-            <button id="clearFilterButton" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Garbitu</button>
+        <div class="mt-4 pt-4 border-t border-gray-200">
+            <p id="categoryCountsNote" class="hidden text-xs text-gray-500 mb-2">Zenbakiak: ikuspegi honetako artikuluak.</p>
+            <button id="clearFilterButton" class="w-full bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Garbitu iragazkiak</button>
         </div>
     </div>
 
     <!-- Maparen edukiontzia -->
     <div id="map"></div>
     
-    <!-- Oharra / Footer -->
-    <footer class="absolute bottom-2 right-2 z-20 bg-white bg-opacity-80 backdrop-blur-sm p-2 rounded-md shadow-md text-xs text-gray-700 text-right max-w-xs">
-        <p>
-            <span class="font-semibold">Beñat Erezuma</span>-k egina, Wikipedia eta OpenStreetMap erabiliz.
-        </p>
-        <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.eu" target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-600 hover:underline">Lizentzia: CC BY-SA 4.0</a>
-    </footer>
-
     <!-- Maparen gaineko mezuak -->
     <div id="mapMessage" role="status" aria-live="polite" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 z-20 w-max max-w-[calc(100vw-2rem)] bg-white bg-opacity-90 p-3 rounded-lg shadow-lg text-center [overflow-wrap:anywhere]">
         <p id="mapMessageText" class="font-semibold text-gray-700"></p>
     </div>
 
-    <!-- Kargatzen ari denaren adierazlea -->
-    <div id="loader" class="hidden absolute top-0 left-0 w-full h-full bg-white bg-opacity-70 z-30 flex items-center justify-center">
-        <div class="flex flex-col items-center">
-            <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <!-- Kargatzen ari denaren adierazlea (mapa blokeatu gabe) -->
+    <div id="loader" role="status" aria-live="polite" class="hidden absolute bottom-36 sm:bottom-auto sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+        <div class="flex items-center gap-2 bg-white bg-opacity-95 shadow-lg rounded-full px-4 py-2">
+            <svg class="animate-spin h-4 w-4 text-blue-600 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <p id="loader-text" class="mt-4 text-gray-700 font-semibold text-center px-4"></p>
+            <p id="loader-text" class="text-sm font-semibold text-gray-700 whitespace-nowrap"></p>
         </div>
     </div>
 

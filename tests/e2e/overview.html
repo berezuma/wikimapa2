@@ -4,7 +4,7 @@
 <body>
 <pre id="result"></pre>
 <script type="module">
-import { run, check, until, sleep, loadApp } from './harness.js';
+import { run, check, until, sleep, loadApp, setCategories } from './harness.js';
 
 // Multzoen zenbakiak + banakako markatzaileak
 const countArticles = (d) => [...d.querySelectorAll('.leaflet-marker-icon')]
@@ -21,14 +21,25 @@ run(async () => {
     check('ez da "erdiko 10 km" oharra agertzen', !/10 km/.test(message()), message());
 
     // Iragazkiak zoom txikian ere funtzionatzen du (bista orokorreko datuekin, sarerik gabe)
-    d.querySelector('input[data-category="Q33506"]').checked = true;
-    d.getElementById('applyFilterButton').click();
+    setCategories(d, 'Q33506');
     await sleep(500);
     await until(() => d.getElementById('loader').classList.contains('hidden'));
     await sleep(1000);
     const museums = countArticles(d);
     check('museoen iragazkia zoom 9an', museums > 50 && museums < total, `${museums} museo`);
     check('ez da "Zooma handitu" oharra agertzen', !/Zooma handitu/.test(message()), message());
+    check('iragazkien botoiak kopurua erakusten du', d.getElementById('filterCount').textContent === '1');
+    const chip = d.querySelector('#activeFilters button');
+    check('iragazki aktiboaren etiketa', chip?.textContent.includes('Museoak'), chip?.textContent);
+    chip?.click();
+    await sleep(1500);
+    check('etiketa sakatuta iragazkia kentzen da', d.getElementById('activeFilters').classList.contains('hidden') && countArticles(d) === total, countArticles(d));
+
+    // Panela irekitzean, kategoria bakoitzeko kopurua
+    d.getElementById('filterButton').click();
+    const museumCount = await until(() => d.querySelector('input[data-category="Q33506"]').parentElement.querySelector('.category-count').textContent);
+    check('kategorien kopuruak panelean', Number(museumCount.replace(/\D/g, '')) > 50, museumCount);
+    check('oinak ez du OSM-ren aitortza estaltzen', !d.querySelector('footer') && /OpenStreetMap/.test(d.querySelector('.leaflet-control-attribution').textContent));
 
     // Datu estatikoen eremutik kanpo (Madril): erdiko zirkulua eta oharra
     const outside = await loadApp('?lat=40.4168&lon=-3.7038&zoom=9');
