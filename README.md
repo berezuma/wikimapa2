@@ -1,6 +1,6 @@
 # Euskarazko Wikipediaren Mapa
 
-Euskarazko Wikipediako artikulu geolokalizatuak mapa batean erakusten dituen web-orria.
+Euskarazko Wikipediako artikulu geolokalizatuak mapa batean erakusten dituen web-orria. **https://wikimapa.berezuma.com**
 
 - Maparen ikuspegiko artikuluak markatzaile gisa agertzen dira, multzokatuta. Bat sakatuta, laburpena eta irudia ikusten dira.
 - Bista orokorra: zoom txikian, Euskal Herri osoko artikulu geolokalizatu guztiak (~14.000) ikusten dira.

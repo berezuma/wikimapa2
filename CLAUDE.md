@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Static single-page map of geolocated Basque Wikipedia (eu.wikipedia.org) articles. UI text and code comments are in Basque (euskara) — keep it that way. No bundler. Deployed as plain static files by GitHub Pages from `main` (repo `berezuma/wikimapa2`, site https://berezuma.github.io/wikimapa2/). Generated files (`css/tailwind.css`, `data/*.json`) are committed, so the site needs no build on deploy.
+Static single-page map of geolocated Basque Wikipedia (eu.wikipedia.org) articles. UI text and code comments are in Basque (euskara) — keep it that way. No bundler. Deployed as plain static files by GitHub Pages from `main` (repo `berezuma/euswikimapa`, site https://wikimapa.berezuma.com via a custom domain: `CNAME` file plus a DNS CNAME record at OVH pointing to `berezuma.github.io`). Generated files (`css/tailwind.css`, `data/*.json`) are committed, so the site needs no build on deploy.
 
 ## Commands
 

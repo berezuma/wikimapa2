@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SPARQL_ENDPOINT = 'https://query.wikidata.org/sparql';
-const USER_AGENT = 'wikimapa2-build/1.0 (https://github.com/berezuma/wikimapa2; info@berezuma.com)';
+const USER_AGENT = 'euswikimapa-build/1.0 (https://github.com/berezuma/euswikimapa; info@berezuma.com)';
 const ARTICLE_PREFIX = 'https://eu.wikipedia.org/wiki/';
 const REGION_MARGIN_DEG = 0.25;
 const TILES = 4; // eremua TILES x TILES zatitan kontsultatzen da, timeout-ak saihesteko
