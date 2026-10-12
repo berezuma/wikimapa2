@@ -47,31 +47,6 @@
             --wm-herriak: #1d4ed8;
             --wm-besteak: #334155;
             --wm-cluster: #334155;
-            --wm-falta: #be185d;
-        }
-        .wm-falta { --wm-color: var(--wm-falta); }
-        /* Euskaraz falta diren lekuak: eraztun etena eta "+" ikurra */
-        .wm-missing::after {
-            content: '+';
-            position: absolute;
-            inset: 1px;
-            border-radius: 50%;
-            background: #ffffff;
-            border: 2px dashed var(--wm-falta);
-            color: var(--wm-falta);
-            font: 700 14px/16px 'Inter', sans-serif;
-            text-align: center;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-            transition: transform 0.15s ease;
-        }
-        .wm-missing:hover::after {
-            transform: scale(1.3);
-        }
-        .marker-cluster.wm-cluster.wm-missing-cluster {
-            background: var(--wm-falta);
-        }
-        .article-popup a.article-secondary {
-            color: #1f2937;
         }
         .wm-kultura { --wm-color: var(--wm-kultura); }
         .wm-natura { --wm-color: var(--wm-natura); }
@@ -317,15 +292,6 @@
             <button id="closeFilterButton" aria-label="Itxi iragazkiak" class="text-gray-600 hover:text-gray-900 text-3xl font-bold">&times;</button>
         </div>
         <div id="filter-content">
-            <!-- Zer falta da: euskarazko artikulurik ez duten lekuak -->
-            <label class="flex items-start gap-2 mb-2 rounded-lg border border-pink-200 bg-pink-50 p-3 cursor-pointer">
-                <input type="checkbox" id="missingCheckbox" class="mt-1">
-                <span class="text-sm">
-                    <span class="font-semibold text-pink-800">Euskaraz falta diren artikuluak</span>
-                    <span id="missingTotal" class="text-xs text-pink-700 tabular-nums"></span>
-                    <span class="block text-xs text-pink-700 mt-0.5">Beste hizkuntzetan artikulua duten lekuak, euskaraz ez dutenak. Idatzi zuk!</span>
-                </span>
-            </label>
             <div id="category-filters" class="space-y-1 text-sm text-gray-700">
                 <p class="category-group flex items-center gap-1.5 font-semibold text-gray-500 text-xs uppercase pt-3" data-group="kultura"><span class="wm-swatch wm-kultura" aria-hidden="true"></span>Kultura eta Ondarea</p>
                 <label class="flex items-center cursor-pointer"><input type="checkbox" class="mr-2" data-category="Q33506"> <span>Museoak</span><span class="category-count ml-auto pl-2 text-xs text-gray-400 tabular-nums"></span></label>
