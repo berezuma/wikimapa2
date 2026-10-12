@@ -9,7 +9,9 @@ Euskarazko Wikipediako artikulu geolokalizatuak mapa batean erakusten dituen web
 - Zoom handian, artikuluen argazkiak markatzaile biribil gisa.
 - Denbora-lerroa: lekuak sortu ziren hurrenkeran agertzen dira (K.a. 4000 – gaur), erreprodukzio automatikoarekin. Wikidatan sorrera-data duten lekuak bakarrik (~2.500).
 - "Harritu nazazu" botoia: Euskal Herriko artikulu aleatorio batera hegan (iragazkiak kontuan hartuta).
-- Zure kokapena, maparen edo artikulu baten esteka partekatzea (`?lat=…&lon=…&zoom=…&artikulua=…`) eta Euskal Herriko muga.
+- "Zure inguruan": kokapena eskuratzean, gertuen dauden artikuluak distantziaren arabera.
+- Mugikorrean aplikazio gisa instala daiteke, eta lineaz kanpo ere badabil azken bisitako datuekin (service worker-a).
+- Maparen edo artikulu baten esteka partekatzea (`?lat=…&lon=…&zoom=…&artikulua=…`) eta Euskal Herriko muga.
 
 ## Exekutatu lokalean
 
