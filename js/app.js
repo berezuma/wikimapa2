@@ -1,46 +1,30 @@
-// Mapa, markatzaileak eta interfazea. Datuak api.js-tik datoz.
+// Mapa, markatzaileak eta datu-fluxua. Datuak api.js-tik datoz; interfazearen zatiak beste moduluetan:
+// search.js (bilatzailea), filters.js (iragazki-panela), timeline.js (denbora-lerroa), popup.js (txartelak),
+// intro.js (sarrera animatua), ui.js (mezuak eta laguntzaileak), data.js (datu estatikoak).
 import {
     fetchJson, isAbortError, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories,
-    fetchSubclasses, fetchOverviewArticles, fetchSummary, searchArticles, fetchPage, findLocationViaWikidata,
-    fetchThumbnails
+    fetchPage, findLocationViaWikidata, fetchThumbnails
 } from './api.js';
+import { loadOverview, loadSubclasses, overviewCovers } from './data.js';
+import { createElement, formatNumber, showLoader, hideLoader, showMapMessage, hideStatusMessage } from './ui.js';
+import { initSearch, setSearchText } from './search.js';
+import { activeCategoryFilters, categoryGroups, initFilters } from './filters.js';
+import { initTimeline, timelineYear } from './timeline.js';
+import { bindArticlePopup, loadSummary } from './popup.js';
+import { introActive, animateBorder, runIntro } from './intro.js';
 
 const BORDER_DATA_URL = "ehmuga.json";
 
-const loader = document.getElementById('loader');
-const loaderText = document.getElementById('loader-text');
-const searchInput = document.getElementById('searchInput');
-const searchResults = document.getElementById('searchResults');
-const filterButton = document.getElementById('filterButton');
-const closeFilterButton = document.getElementById('closeFilterButton');
-const filterPanel = document.getElementById('filterPanel');
 const locateButton = document.getElementById('locateButton');
 const shareButton = document.getElementById('shareButton');
 const surpriseButton = document.getElementById('surpriseButton');
-const intro = document.getElementById('intro');
-const timelineButton = document.getElementById('timelineButton');
-const timelineBox = document.getElementById('timeline');
-const timelinePlay = document.getElementById('timelinePlay');
-const timelineSlider = document.getElementById('timelineSlider');
-const introCount = document.getElementById('introCount');
-const categoryFilters = document.getElementById('category-filters');
-const clearFilterButton = document.getElementById('clearFilterButton');
-const filterCount = document.getElementById('filterCount');
-const activeFiltersBox = document.getElementById('activeFilters');
-const categoryCountsNote = document.getElementById('categoryCountsNote');
-const mapMessage = document.getElementById('mapMessage');
-const mapMessageText = document.getElementById('mapMessageText');
 
 // Artikuluak izenburuaren arabera identifikatzen dira (geosearch, Wikidata eta datu estatikoak)
-const summaryCache = {};
 let selectedTitle = null;
-const activeCategoryFilters = new Set();
 const MIN_FILTER_ZOOM = 12;
 // Iragazkietarako azken eremuko artikuluak ({ bounds, articles }): kategoriak aldatzean edo
 // eremu horren barruan mugitzean ez da Wikidata berriz kontsultatzen
 let areaCache = null;
-let subclassesPromise = null;
-let overviewPromise = null;
 
 // Wikipediaren geosearch-ak ~400 km²-ko bbox-a onartzen du gehienez ("toobig" errorea bestela).
 // Ikuspegia handiagoa bada, bista orokorra erabiltzen da (data/artikuluak.json), edo eremu horretatik
@@ -55,19 +39,6 @@ const numberParam = (params, name, min, max, fallback) => {
 };
 
 const urlParams = new URLSearchParams(window.location.search);
-
-// Sarrera animatua: lehen bisitan, parametrorik gabe (partekatutako esteketan ez) eta mugimendua murriztu gabe
-const INTRO_KEY = 'wikimapa-sarrera-ikusita';
-const introActive = (() => {
-    if (window.location.search || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
-    try {
-        if (localStorage.getItem(INTRO_KEY)) return false;
-        localStorage.setItem(INTRO_KEY, '1');
-    } catch {
-        // localStorage-rik gabe: sarrera erakutsi (ezin da gogoratu)
-    }
-    return true;
-})();
 const lat = numberParam(urlParams, 'lat', -90, 90, 43.0);
 const lon = numberParam(urlParams, 'lon', -180, 180, -2.5);
 const zoom = Math.round(numberParam(urlParams, 'zoom', 0, 19, 9));
@@ -104,39 +75,7 @@ const markersByTitle = new Map();
 let highlightedMarker = null;
 
 let debounceTimer;
-let searchDebounceTimer;
 let updateController = null;
-let searchController = null;
-let mapMessageTimer;
-let loaderTimer;
-let filterDebounceTimer;
-
-// Adierazlea 300 ms-tik gorako kargetan bakarrik agertzen da (bestela keinuka ibiliko litzateke)
-const showLoader = (text = "Artikuluak kargatzen...") => {
-    loaderText.textContent = text;
-    clearTimeout(loaderTimer);
-    loaderTimer = setTimeout(() => loader.classList.remove('hidden'), 300);
-};
-const hideLoader = () => {
-    clearTimeout(loaderTimer);
-    loader.classList.add('hidden');
-};
-// timeout ematen bada, mezua automatikoki ezkutatzen da
-const showMapMessage = (text, timeout = 0) => {
-    clearTimeout(mapMessageTimer);
-    mapMessageText.textContent = text;
-    mapMessage.classList.remove('hidden');
-    if (timeout) mapMessageTimer = setTimeout(hideMapMessage, timeout);
-};
-const hideMapMessage = () => {
-    clearTimeout(mapMessageTimer);
-    mapMessageTimer = null;
-    mapMessage.classList.add('hidden');
-};
-// Mapa eguneratzean: egoera-mezuak (iraunkorrak) bakarrik ezkutatu, ez "esteka kopiatu da" bezalakoak
-const hideStatusMessage = () => {
-    if (!mapMessageTimer) hideMapMessage();
-};
 
 const plainBounds = (bounds) => ({
     north: bounds.getNorth(), south: bounds.getSouth(), east: bounds.getEast(), west: bounds.getWest()
@@ -162,26 +101,10 @@ const drawBasqueCountryBorders = async () => {
     }
 };
 
-// Datu estatikoak behin bakarrik kargatzen dira; huts eginez gero, hurrengoan berriz saiatzen da
-const loadSubclasses = () => {
-    subclassesPromise ??= fetchSubclasses().catch((error) => { subclassesPromise = null; throw error; });
-    return subclassesPromise;
-};
-const loadOverview = () => {
-    overviewPromise ??= fetchOverviewArticles().catch((error) => { overviewPromise = null; throw error; });
-    return overviewPromise;
-};
-
 const showFilteredArticles = (articles, subclasses) => {
     const filtered = filterByCategories(articles, [...activeCategoryFilters], subclasses);
     renderArticles(filtered);
     if (filtered.length === 0) showMapMessage("Ez dago iragazkiarekin bat datorren artikulurik ikuspegi honetan.", 4000);
-};
-
-// Bista orokorreko datuek mapa-erdigunea estaltzen duten
-const overviewCovers = (overview, center) => {
-    const { south, west, north, east } = overview.bounds;
-    return L.latLngBounds([south, west], [north, east]).contains(center);
 };
 
 const updateMapData = async () => {
@@ -194,7 +117,8 @@ const updateMapData = async () => {
     hideStatusMessage();
 
     try {
-        if (timelineIndex !== null) {
+        const year = timelineYear();
+        if (year !== null) {
             // Denbora-lerroa: data duten lekuak, aukeratutako urtera arte (iragazkiak ere aplikatuta)
             const [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
             if (updateController !== controller) return;
@@ -203,7 +127,6 @@ const updateMapData = async () => {
                 showMapMessage('Denbora-lerroa Euskal Herriko eremuan bakarrik dabil.');
                 return;
             }
-            const year = timelineYears[timelineIndex];
             let articles = overview.articles.filter(article => article.year !== null && article.year <= year);
             if (filtering) articles = filterByCategories(articles, [...activeCategoryFilters], subclasses);
             renderArticles(articles);
@@ -376,8 +299,6 @@ const trackPopup = (marker, title) => {
     });
 };
 
-const POPUP_OPTIONS = { maxWidth: 320, minWidth: 260, className: 'article-popup' };
-
 // Markatzaileen kolorea taldearen arabera (iragazki-paneleko taldeak: kultura, natura, herriak; bestela besteak).
 // Artikuluaren motak datu estatikoetatik datoz (izenburuz), geosearch-ek ez baititu ematen.
 const GROUPS = ['kultura', 'natura', 'herriak', 'besteak'];
@@ -457,16 +378,7 @@ const loadMarkerGroups = async () => {
             });
         }
         typesByTitle = new Map(overview.articles.map(article => [article.title, article.types]));
-        groupTypes = [...categoryFilters.querySelectorAll('.category-group')].map(heading => {
-            const typeSet = new Set();
-            let next = heading.nextElementSibling;
-            while (next && !next.classList.contains('category-group')) {
-                const input = next.querySelector('input[data-category]');
-                if (input) input.dataset.category.split(/\s+/).forEach(qid => (subclasses[qid] || []).forEach(type => typeSet.add(type)));
-                next = next.nextElementSibling;
-            }
-            return [heading.dataset.group, typeSet];
-        });
+        groupTypes = categoryGroups(subclasses);
         markersByTitle.forEach(refreshMarkerIcon);
     } catch (error) {
         console.error("Errorea markatzaileen taldeak kargatzean:", error);
@@ -478,9 +390,7 @@ const createMarker = (article) => {
     const marker = L.marker([article.lat, article.lon], { icon });
     marker.article = article;
     marker.iconKey = key;
-    // Edukia popupa irekitzean sortzen da (bista orokorrak milaka markatzaile ditu)
-    marker.bindPopup(() => createPopupContent(article, summaryCache[article.title] || null), POPUP_OPTIONS);
-    marker.on('popupopen', () => fetchAndDisplaySummary(article, marker));
+    bindArticlePopup(marker, article);
     // Laburpena aurrez kargatu (hatza/sagua markatzailean jartzean), popupa irekitzean prest egon dadin
     marker.on('mouseover mousedown', () => loadSummary(article.title).catch(() => {}));
     trackPopup(marker, article.title);
@@ -491,203 +401,19 @@ const showIndirectMarker = (info) => {
     indirectLayer.clearLayers();
     const marker = L.marker(info.coords, { icon: markerIcons[articleGroup({ title: info.title })] });
     marker.bindTooltip(info.title, { permanent: true, direction: 'top', offset: [0, -10], className: 'article-tooltip' }).openTooltip();
-    const articleForPopup = { title: info.title };
-    marker.bindPopup(() => createPopupContent(articleForPopup, summaryCache[info.title] || null, info.locTitle), POPUP_OPTIONS);
-    marker.on('popupopen', () => fetchAndDisplaySummary(articleForPopup, marker, info.locTitle));
+    bindArticlePopup(marker, { title: info.title }, info.locTitle);
     trackPopup(marker, info.title);
     indirectLayer.addLayer(marker);
     return marker;
 };
 
-const summaryPromises = new Map();
-const loadSummary = (title) => {
-    if (!summaryPromises.has(title)) {
-        summaryPromises.set(title, fetchSummary(title).catch((error) => {
-            summaryPromises.delete(title);
-            throw error;
-        }));
-    }
-    return summaryPromises.get(title);
-};
-
-const fetchAndDisplaySummary = async (article, marker, locTitle = null) => {
-    const popup = marker.getPopup();
-    if (summaryCache[article.title]) {
-        popup.setContent(createPopupContent(article, summaryCache[article.title], locTitle)); return;
-    }
-    try {
-        const summary = await loadSummary(article.title);
-        if (summary) {
-            summaryCache[article.title] = summary;
-            popup.setContent(createPopupContent(article, summary, locTitle));
-        } else {
-            popup.setContent(createPopupContent(article, { extract: "Ezin izan da artikuluaren informazioa aurkitu." }, locTitle));
-        }
-    } catch (error) {
-        console.error("Ezin izan da laburpena eskuratu:", error);
-        popup.setContent(createPopupContent(article, { extract: "Errorea laburpena kargatzean." }, locTitle));
-    }
-};
-
-const createElement = (tag, className, text) => {
-    const element = document.createElement(tag);
-    if (className) element.className = className;
-    if (text !== undefined) element.textContent = text;
-    return element;
-};
-
-// Popup txartela: izenburua, irudi txikia alboan, laburpen moztua eta Wikipediarako botoia.
-// summaryData: null (kargatzen), { extract, imageSrc } edo errore-testua { extract }.
-// DOM nodoak erabiltzen dira (ez HTML katerik), Wikipediako testuak HTML gisa interpreta ez daitezen
-const createPopupContent = (article, summaryData, locTitle = null) => {
-    const container = createElement('div', 'article-card');
-    container.appendChild(createElement('h3', 'text-base font-bold text-gray-900 leading-snug pr-4', article.title));
-    if (locTitle) {
-        container.appendChild(createElement('p', 'text-xs text-gray-500 mt-0.5', `Kokapen erlazionatua: ${locTitle}`));
-    }
-
-    const body = createElement('div', 'flex gap-3 mt-2');
-    if (summaryData?.imageSrc) {
-        const image = createElement('img', 'w-20 h-20 object-cover rounded-md shrink-0 bg-gray-100');
-        image.src = summaryData.imageSrc;
-        image.alt = '';
-        body.appendChild(image);
-    }
-    if (summaryData) {
-        body.appendChild(createElement('p', 'text-sm text-gray-700 leading-relaxed line-clamp-5 m-0', summaryData.extract));
-    } else {
-        // Eskeletoa: azken txartelaren tamaina gutxi gorabehera (irudia + lerroak), laburpena iristean
-        // tamaina ez aldatzeko eta mapa berriz ez mugitzeko (autoPan)
-        body.setAttribute('aria-busy', 'true');
-        body.appendChild(createElement('div', 'w-20 h-20 rounded-md shrink-0 bg-gray-200 animate-pulse'));
-        const lines = createElement('div', 'flex-grow space-y-2 pt-1');
-        lines.appendChild(createElement('span', 'sr-only', 'Laburpena kargatzen…'));
-        ['w-full', 'w-full', 'w-5/6', 'w-2/3'].forEach(width => lines.appendChild(createElement('div', `h-3 ${width} rounded bg-gray-200 animate-pulse`)));
-        body.appendChild(lines);
-    }
-    container.appendChild(body);
-
-    const link = createElement('a', 'article-read inline-flex items-center gap-1 mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold hover:bg-blue-700', 'Irakurri Wikipedian →');
-    link.href = `https://eu.wikipedia.org/wiki/${encodeURIComponent(article.title.replace(/ /g, '_'))}`;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    container.appendChild(link);
-    return container;
-};
-
-const hideSearchResults = () => {
-    searchResults.innerHTML = '';
-    searchResults.classList.add('hidden');
-    searchInput.setAttribute('aria-expanded', 'false');
-    searchInput.removeAttribute('aria-activedescendant');
-    activeResultIndex = -1;
-};
-
-// Teklatuz nabigatzeko: gezi-teklekin hautatutako emaitza
-let activeResultIndex = -1;
-const resultItems = () => [...searchResults.querySelectorAll('[role="option"]')];
-
-const setActiveResult = (index) => {
-    const items = resultItems();
-    items.forEach((item, i) => {
-        const active = i === index;
-        item.classList.toggle('bg-gray-100', active);
-        item.setAttribute('aria-selected', String(active));
-    });
-    activeResultIndex = index;
-    if (items[index]) {
-        searchInput.setAttribute('aria-activedescendant', items[index].id);
-        items[index].scrollIntoView({ block: 'nearest' });
-    } else {
-        searchInput.removeAttribute('aria-activedescendant');
-    }
-};
-
-const handleSearchKeydown = (event) => {
-    const items = resultItems();
-    if (event.key === 'Escape') {
-        hideSearchResults();
-        return;
-    }
-    if (items.length === 0) return;
-    if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setActiveResult((activeResultIndex + 1) % items.length);
-    } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setActiveResult(activeResultIndex <= 0 ? items.length - 1 : activeResultIndex - 1);
-    } else if (event.key === 'Enter') {
-        event.preventDefault();
-        selectArticle(items[Math.max(activeResultIndex, 0)].dataset.title);
-    }
-};
-
-const handleSearch = async () => {
-    const query = searchInput.value;
-    searchController?.abort();
-    if (query.length < 3) {
-        hideSearchResults(); return;
-    }
-    const controller = new AbortController();
-    searchController = controller;
-    try {
-        const results = await searchArticles(query, controller.signal);
-        hideSearchResults();
-        if (results.length > 0) {
-            searchResults.classList.remove('hidden');
-            searchInput.setAttribute('aria-expanded', 'true');
-            results.forEach((result, i) => searchResults.appendChild(createSearchResult(result, i)));
-        } else {
-            searchResults.classList.remove('hidden');
-            searchResults.appendChild(createElement('div', 'p-3 text-sm text-gray-500', 'Ez da artikulurik aurkitu.'));
-        }
-    } catch (error) {
-        if (isAbortError(error)) return;
-        console.error("Errorea bilaketan:", error);
-        hideSearchResults();
-    }
-};
-
-// Emaitza bakoitza: irudi txikia, izenburua eta deskribapena. Koordenaturik ez badu, lotutako lekua erakutsiko da.
-const createSearchResult = (result, index) => {
-    const option = createElement('div', 'flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer');
-    option.id = `searchResult-${index}`;
-    option.dataset.title = result.title;
-    option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', 'false');
-
-    if (result.thumbnail) {
-        const image = createElement('img', 'w-10 h-10 object-cover rounded shrink-0 bg-gray-100');
-        image.src = result.thumbnail;
-        image.alt = '';
-        option.appendChild(image);
-    } else {
-        option.appendChild(createElement('div', 'w-10 h-10 rounded shrink-0 bg-gray-100'));
-    }
-    const text = createElement('div', 'min-w-0');
-    text.appendChild(createElement('div', 'text-sm font-medium text-gray-900 truncate', result.title));
-    const details = [result.description, result.hasCoords ? '' : 'kokapen erlazionatua'].filter(Boolean).join(' · ');
-    if (details) text.appendChild(createElement('div', 'text-xs text-gray-500 truncate', details));
-    option.appendChild(text);
-
-    option.onclick = () => selectArticle(result.title);
-    return option;
-};
-
-const debouncedSearch = () => {
-    clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(handleSearch, 250);
-};
-
 const selectArticle = async (title) => {
-    searchController?.abort();
     map.closePopup();
     pendingPopupTitle = null;
     pinnedArticle = null;
     indirectLayer.clearLayers();
     clearHighlight();
-    searchInput.value = title;
-    hideSearchResults();
+    setSearchText(title);
     try {
         const page = await fetchPage(title);
         if (!page) {
@@ -741,38 +467,10 @@ const debouncedUpdate = () => {
 
 // Event Listeners
 map.on('moveend', debouncedUpdate);
-searchInput.addEventListener('input', debouncedSearch);
-searchInput.addEventListener('keydown', handleSearchKeydown);
-document.addEventListener('click', (e) => {
-    if (!searchResults.contains(e.target) && e.target !== searchInput) hideSearchResults();
-});
+initSearch(selectArticle);
+initFilters(map, updateMapData);
+initTimeline(updateMapData);
 
-// Panela itxita dagoenean "inert" da, Tab teklak bere kontroletara heldu ez dadin
-const openFilterPanel = () => {
-    // Artikuluaren popupa itxi: mugikorrean panelak ia pantaila osoa estaltzen du, eta popupak (bere
-    // geruzekin) panela marraztea eragozten zuen
-    map.closePopup();
-    filterPanel.inert = false;
-    filterPanel.classList.add('open');
-    filterButton.setAttribute('aria-expanded', 'true');
-    // preventScroll: mugikorretan fokuak ez dezala orria mugitu animazioaren erdian
-    categoryFilters.querySelector('input')?.focus({ preventScroll: true });
-    // Kopuruak irristatze-animazioa (0,3 s) amaitu ondoren kalkulatu, animazioa leuna izan dadin
-    setTimeout(updateCategoryCounts, 320);
-};
-const closeFilterPanel = () => {
-    const hadFocus = filterPanel.contains(document.activeElement);
-    filterPanel.classList.remove('open');
-    filterPanel.inert = true;
-    filterButton.setAttribute('aria-expanded', 'false');
-    if (hadFocus) filterButton.focus();
-};
-
-filterButton.addEventListener('click', openFilterPanel);
-closeFilterButton.addEventListener('click', closeFilterPanel);
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && filterPanel.classList.contains('open')) closeFilterPanel();
-});
 locateButton.addEventListener('click', () => {
     if (!navigator.geolocation) {
         showMapMessage('Nabigatzaile honek ez du kokapena eskuratzeko aukerarik.', 4000);
@@ -806,76 +504,6 @@ shareButton.addEventListener('click', () => {
         .catch(() => showMapMessage(url, 8000));
 });
 
-// Milakoak puntuz (1.109), euskarazko idazkeraren arabera
-const formatNumber = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-
-const categoryInputs = () => [...categoryFilters.querySelectorAll('input[type="checkbox"]')];
-const categoryLabel = (input) => input.parentElement.querySelector('span').textContent.trim();
-
-// Iragazki aktiboak: botoiko zenbakia eta bilatzailearen azpiko etiketak (✕ sakatuta kentzen dira)
-const renderActiveFilters = () => {
-    const checked = categoryInputs().filter(input => input.checked);
-    filterCount.textContent = String(checked.length);
-    filterCount.classList.toggle('hidden', checked.length === 0);
-    activeFiltersBox.classList.toggle('hidden', checked.length === 0);
-    activeFiltersBox.replaceChildren(...checked.map(input => {
-        const chip = createElement('button', 'inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-xs font-semibold hover:bg-blue-100');
-        chip.type = 'button';
-        chip.setAttribute('aria-label', `Kendu iragazkia: ${categoryLabel(input)}`);
-        chip.append(categoryLabel(input), createElement('span', 'text-blue-400', '✕'));
-        chip.addEventListener('click', () => {
-            input.checked = false;
-            applyFilters();
-        });
-        return chip;
-    }));
-};
-
-// Kategoria bakoitzeko kopurua uneko ikuspegian, datu estatikoekin (eremutik kanpo ez da erakusten)
-const updateCategoryCounts = async () => {
-    if (!filterPanel.classList.contains('open')) return;
-    // Datuak oraindik kargatzen ari badira (mugikorreko sare motelean), "…"
-    categoryInputs().forEach(input => {
-        const count = input.parentElement.querySelector('.category-count');
-        if (!count.textContent) count.textContent = '…';
-    });
-    let overview = null;
-    let subclasses = null;
-    try {
-        [overview, subclasses] = await Promise.all([loadOverview(), loadSubclasses()]);
-    } catch {
-        // kopururik gabe jarraitu
-    }
-    const bounds = map.getBounds();
-    const covered = overview && subclasses && overviewCovers(overview, map.getCenter());
-    const visible = covered ? overview.articles.filter(article => bounds.contains([article.lat, article.lon])) : [];
-    categoryInputs().forEach(input => {
-        const count = input.parentElement.querySelector('.category-count');
-        count.textContent = covered ? formatNumber(filterByCategories(visible, [input.dataset.category], subclasses).length) : '';
-    });
-    categoryCountsNote.classList.toggle('hidden', !covered);
-};
-
-// Kategoriak markatzean berehala aplikatzen dira (debounce txiki batekin, hainbat azkar markatzeko)
-const applyFilters = () => {
-    activeCategoryFilters.clear();
-    categoryInputs().filter(input => input.checked).forEach(input => activeCategoryFilters.add(input.dataset.category));
-    renderActiveFilters();
-    clearTimeout(filterDebounceTimer);
-    filterDebounceTimer = setTimeout(updateMapData, 150);
-};
-
-categoryFilters.addEventListener('change', (event) => {
-    if (event.target.matches('input[type="checkbox"]')) applyFilters();
-});
-
-clearFilterButton.addEventListener('click', () => {
-    categoryInputs().forEach(input => { input.checked = false; });
-    applyFilters();
-});
-
-map.on('moveend', updateCategoryCounts);
-
 // Harritu nazazu: Euskal Herriko artikulu aleatorio batera hegan egin eta txartela ireki.
 // Iragazkiak aktibo badaude, horien artean; bestela, kategoriaren bat duten artikuluen artean (interesgarriagoak).
 const surpriseMe = async () => {
@@ -898,7 +526,7 @@ const surpriseMe = async () => {
         indirectLayer.clearLayers();
         clearHighlight();
         map.closePopup();
-        searchInput.value = '';
+        setSearchText('');
         pinnedArticle = article;
         selectedTitle = article.title;
         pendingPopupTitle = article.title;
@@ -909,91 +537,6 @@ const surpriseMe = async () => {
     }
 };
 surpriseButton.addEventListener('click', surpriseMe);
-
-// Denbora-lerroa. Graduatzailea artikuluen indizearen araberakoa da (ez urtearena): urte bakoitzak
-// bere artikulu-kopuruaren araberako tartea du, eta Erdi Aroa ez da milurteko hutsetan galtzen.
-let timelineYears = null; // data duten artikuluen urteak, goranzko ordenan
-let timelineIndex = null; // null: itxita
-let timelinePlayTimer = null;
-const ERAS = [[476, 'Antzinaroa'], [1492, 'Erdi Aroa'], [1789, 'Aro Modernoa'], [Infinity, 'Aro Garaikidea']];
-const formatYear = (year) => (year < 0 ? `K.a. ${formatNumber(-year)}` : String(year));
-
-const updateTimelineLabels = () => {
-    const year = timelineYears[timelineIndex];
-    // Urte bereko artikulu guztiak barne
-    let count = timelineIndex + 1;
-    while (count < timelineYears.length && timelineYears[count] === year) count++;
-    document.getElementById('timelineYear').textContent = formatYear(year);
-    document.getElementById('timelineEra').textContent = ERAS.find(([end]) => year < end)[1];
-    document.getElementById('timelineCount').textContent = `${formatNumber(count)} leku`;
-    timelineSlider.setAttribute('aria-valuetext', formatYear(year));
-};
-
-const setTimelineIndex = (index) => {
-    timelineIndex = Math.max(0, Math.min(timelineYears.length - 1, index));
-    timelineSlider.value = String(timelineIndex);
-    updateTimelineLabels();
-    updateMapData();
-};
-
-const stopTimelinePlay = () => {
-    clearInterval(timelinePlayTimer);
-    timelinePlayTimer = null;
-    document.getElementById('timelinePlayIcon').classList.remove('hidden');
-    document.getElementById('timelinePauseIcon').classList.add('hidden');
-    timelinePlay.setAttribute('aria-label', 'Erreproduzitu');
-};
-
-// ~12 segundotan hasieratik bukaerara
-const startTimelinePlay = () => {
-    if (timelineIndex >= timelineYears.length - 1) setTimelineIndex(0);
-    const step = Math.max(1, Math.ceil(timelineYears.length / 240));
-    document.getElementById('timelinePlayIcon').classList.add('hidden');
-    document.getElementById('timelinePauseIcon').classList.remove('hidden');
-    timelinePlay.setAttribute('aria-label', 'Gelditu');
-    timelinePlayTimer = setInterval(() => {
-        if (timelineIndex >= timelineYears.length - 1) {
-            stopTimelinePlay();
-            return;
-        }
-        setTimelineIndex(timelineIndex + step);
-    }, 50);
-};
-
-const openTimeline = async () => {
-    try {
-        const { articles } = await loadOverview();
-        timelineYears = articles.filter(article => article.year !== null).map(article => article.year).sort((a, b) => a - b);
-        if (timelineYears.length === 0) return;
-        timelineSlider.max = String(timelineYears.length - 1);
-        document.getElementById('timelineTotal').textContent = `${formatNumber(timelineYears.length)} leku datatu`;
-        timelineBox.classList.remove('hidden');
-        document.body.classList.add('timeline-open');
-        timelineButton.setAttribute('aria-pressed', 'true');
-        setTimelineIndex(0);
-        startTimelinePlay();
-    } catch (error) {
-        console.error("Errorea denbora-lerroa irekitzean:", error);
-        showMapMessage('Errorea gertatu da denbora-lerroa irekitzean.', 3000);
-    }
-};
-
-const closeTimeline = () => {
-    stopTimelinePlay();
-    timelineIndex = null;
-    timelineBox.classList.add('hidden');
-    document.body.classList.remove('timeline-open');
-    timelineButton.setAttribute('aria-pressed', 'false');
-    updateMapData();
-};
-
-timelineButton.addEventListener('click', () => (timelineIndex === null ? openTimeline() : closeTimeline()));
-document.getElementById('timelineClose').addEventListener('click', closeTimeline);
-timelinePlay.addEventListener('click', () => (timelinePlayTimer ? stopTimelinePlay() : startTimelinePlay()));
-timelineSlider.addEventListener('input', () => {
-    stopTimelinePlay();
-    setTimelineIndex(Number(timelineSlider.value));
-});
 
 // Legenda (ordenagailuan; mugikorrean iragazki-paneleko izenburuek erakusten dituzte koloreak)
 const legend = L.control({ position: 'bottomleft' });
@@ -1009,50 +552,6 @@ legend.onAdd = () => {
 };
 legend.addTo(map);
 
-// Muga marrazten den animazioa (SVG trazuaren luzera), gero betegarria
-const animateBorder = (border) => {
-    const path = border.getElement();
-    if (!path?.getTotalLength) return;
-    const length = path.getTotalLength();
-    path.style.strokeDasharray = `${length}`;
-    path.style.strokeDashoffset = `${length}`;
-    path.style.fillOpacity = '0';
-    path.getBoundingClientRect(); // hasierako egoera aplikatzeko
-    path.style.transition = 'stroke-dashoffset 2.2s ease-in-out, fill-opacity 0.8s ease 2s';
-    path.style.strokeDashoffset = '0';
-    path.style.fillOpacity = '';
-    // Zoomak trazuaren luzera aldatzen du: amaitzean estiloak kendu
-    setTimeout(() => {
-        path.style.transition = '';
-        path.style.strokeDasharray = '';
-        path.style.strokeDashoffset = '';
-    }, 3000);
-};
-
-// Kontagailua 0tik artikulu-kopururaino, eta gero txartela desagertzen da
-const runIntro = async () => {
-    const mapElement = document.getElementById('map');
-    mapElement.classList.add('wm-intro-running');
-    setTimeout(() => mapElement.classList.remove('wm-intro-running'), 1800);
-    try {
-        const { articles } = await loadOverview();
-        intro.classList.remove('hidden');
-        const total = articles.length;
-        const start = performance.now();
-        const duration = 2000;
-        const tick = (now) => {
-            const t = Math.min(1, (now - start) / duration);
-            const eased = 1 - Math.pow(1 - t, 3);
-            introCount.textContent = formatNumber(Math.round(total * eased));
-            if (t < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-        setTimeout(() => intro.classList.add('leaving'), 3200);
-        setTimeout(() => intro.classList.add('hidden'), 3900);
-    } catch {
-        mapElement.classList.remove('wm-intro-running');
-    }
-};
 if (introActive) runIntro();
 
 // Hasierako datu karga; ?artikulua=… badago, artikulu hori hautatu
