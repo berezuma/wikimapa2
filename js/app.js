@@ -1,5 +1,6 @@
 // Mapa, markatzaileak eta datu-fluxua. Datuak api.js-tik datoz; interfazearen zatiak beste moduluetan:
 // search.js (bilatzailea), filters.js (iragazki-panela), timeline.js (denbora-lerroa), popup.js (txartelak),
+// nearby.js (zure inguruan),
 // intro.js (sarrera animatua), ui.js (mezuak eta laguntzaileak), data.js (datu estatikoak).
 import {
     fetchJson, isAbortError, geosearchBox, geosearchAround, fetchAreaArticles, filterByCategories,
@@ -12,10 +13,12 @@ import { activeCategoryFilters, categoryGroups, initFilters } from './filters.js
 import { initTimeline, timelineYear } from './timeline.js';
 import { bindArticlePopup, loadSummary } from './popup.js';
 import { introActive, animateBorder, runIntro } from './intro.js';
+import { initNearby, showNearby, hideNearby } from './nearby.js';
 
 const BORDER_DATA_URL = "ehmuga.json";
 
 const locateButton = document.getElementById('locateButton');
+const timelineButton = document.getElementById('timelineButton');
 const shareButton = document.getElementById('shareButton');
 const surpriseButton = document.getElementById('surpriseButton');
 
@@ -470,23 +473,44 @@ map.on('moveend', debouncedUpdate);
 initSearch(selectArticle);
 initFilters(map, updateMapData);
 initTimeline(updateMapData);
+initNearby((article) => showArticle(article));
+// Denbora-lerroa eta inguruko zerrenda leku berean daude behean
+timelineButton.addEventListener('click', hideNearby);
 
+// Nire kokapena: puntua mapan eta gertuen dauden artikuluen zerrenda (geosearch, 10 km)
+const showLocation = async (position) => {
+    const latlng = [position.coords.latitude, position.coords.longitude];
+    locationLayer.clearLayers();
+    L.circle(latlng, { radius: position.coords.accuracy, color: '#2563eb', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(locationLayer);
+    L.circleMarker(latlng, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 })
+        .bindTooltip('Zu hemen zaude', { direction: 'top', offset: [0, -8] })
+        .addTo(locationLayer);
+    map.flyTo(latlng, 17);
+    showLoader('Inguruko artikuluak bilatzen...');
+    try {
+        const articles = await geosearchAround({ lat: latlng[0], lon: latlng[1] });
+        if (articles.length) {
+            showNearby(latlng, articles, articleGroup);
+        } else {
+            showMapMessage('Ez dago artikulurik 10 km-ko inguruan.', 4000);
+        }
+    } catch (error) {
+        console.error("Errorea inguruko artikuluak bilatzean:", error);
+        showMapMessage('Errorea gertatu da inguruko artikuluak bilatzean.', 4000);
+    } finally {
+        hideLoader();
+    }
+};
 locateButton.addEventListener('click', () => {
     if (!navigator.geolocation) {
         showMapMessage('Nabigatzaile honek ez du kokapena eskuratzeko aukerarik.', 4000);
         return;
     }
     navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const latlng = [position.coords.latitude, position.coords.longitude];
-            locationLayer.clearLayers();
-            L.circle(latlng, { radius: position.coords.accuracy, color: '#2563eb', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(locationLayer);
-            L.circleMarker(latlng, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 })
-                .bindTooltip('Zu hemen zaude', { direction: 'top', offset: [0, -8] })
-                .addTo(locationLayer);
-            map.flyTo(latlng, 17);
-        },
-        () => showMapMessage('Ezin izan da zure kokapena eskuratu. Mesedez, egiaztatu baimenak.', 4000)
+        showLocation,
+        () => showMapMessage('Ezin izan da zure kokapena eskuratu. Mesedez, egiaztatu baimenak.', 4000),
+        // Minutu bateko kokapena berrerabili: zerrendara itzultzeko botoia berriz sakatzea nahikoa da
+        { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
     );
 });
 shareButton.addEventListener('click', () => {
@@ -503,6 +527,18 @@ shareButton.addEventListener('click', () => {
         .then(() => showMapMessage(openArticleTitle ? `'${openArticleTitle}' artikuluaren esteka kopiatu da!` : 'Maparen esteka arbelean kopiatu da!', 3000))
         .catch(() => showMapMessage(url, 8000));
 });
+
+// Artikulu batera hegan egin eta bere txartela ireki (datu-iturriak ez badu ere, ainguratuta mapan geratzen da)
+const showArticle = (article, flyOptions = {}) => {
+    indirectLayer.clearLayers();
+    clearHighlight();
+    map.closePopup();
+    setSearchText('');
+    pinnedArticle = article;
+    selectedTitle = article.title;
+    pendingPopupTitle = article.title;
+    map.flyTo([article.lat, article.lon], PHOTO_ZOOM, flyOptions);
+};
 
 // Harritu nazazu: Euskal Herriko artikulu aleatorio batera hegan egin eta txartela ireki.
 // Iragazkiak aktibo badaude, horien artean; bestela, kategoriaren bat duten artikuluen artean (interesgarriagoak).
@@ -522,15 +558,7 @@ const surpriseMe = async () => {
             showMapMessage('Ez dago artikulurik iragazki hauekin.', 3000);
             return;
         }
-        const article = pool[Math.floor(Math.random() * pool.length)];
-        indirectLayer.clearLayers();
-        clearHighlight();
-        map.closePopup();
-        setSearchText('');
-        pinnedArticle = article;
-        selectedTitle = article.title;
-        pendingPopupTitle = article.title;
-        map.flyTo([article.lat, article.lon], PHOTO_ZOOM, { duration: 2.5 });
+        showArticle(pool[Math.floor(Math.random() * pool.length)], { duration: 2.5 });
     } catch (error) {
         console.error("Errorea ausazko artikulua aukeratzean:", error);
         showMapMessage('Errorea gertatu da. Saiatu berriro.', 3000);

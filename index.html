@@ -167,6 +167,13 @@
         body.timeline-open #mapMessage, body.timeline-open #loader {
             bottom: 9rem;
         }
+        /* Inguruko zerrenda irekita: mezuak eta kargatzailea txartelaren gainean */
+        body.nearby-open #mapMessage {
+            bottom: calc(35vh + 6rem);
+        }
+        @media (max-width: 639px) {
+            body.nearby-open #loader { bottom: calc(35vh + 6rem); }
+        }
         #intro.leaving .wm-intro-card {
             opacity: 0;
             transform: translateY(-12px);
@@ -383,6 +390,16 @@
         </div>
     </div>
 
+    <!-- Zure inguruan: gertuen dauden artikuluak, distantziaren arabera (kokapena eskuratzean) -->
+    <div id="nearby" role="region" aria-labelledby="nearbyTitle" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[min(28rem,calc(100vw-2rem))]">
+        <div class="wm-timeline-card rounded-2xl bg-white bg-opacity-95 shadow-2xl">
+            <div class="flex items-center justify-between px-4 pt-3 pb-1">
+                <h2 id="nearbyTitle" class="text-base font-bold text-gray-900">Zure inguruan</h2>
+                <button id="nearbyClose" class="text-gray-500 hover:text-gray-900 text-2xl leading-none" aria-label="Itxi inguruko artikuluak">&times;</button>
+            </div>
+            <ul id="nearbyList" class="max-h-[35vh] overflow-y-auto pb-2"></ul>
+        </div>
+    </div>
     <!-- Sarrera animatua (lehen bisitan bakarrik; ez du mapa blokeatzen) -->
     <div id="intro" class="hidden absolute inset-x-0 top-1/3 z-30 flex justify-center pointer-events-none px-4" aria-hidden="true">
         <div class="wm-intro-card rounded-2xl bg-white bg-opacity-90 px-8 py-6 text-center shadow-2xl">

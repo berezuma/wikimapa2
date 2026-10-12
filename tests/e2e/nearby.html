@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Zure inguruan proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, until, loadApp } from './harness.js';
+
+run(async () => {
+    const { w, d } = await loadApp('?lat=43.0&lon=-2.5&zoom=9');
+    // Kokapena simulatu: Bilboko Arriaga plaza inguruan
+    w.navigator.geolocation.getCurrentPosition = (success) => success({ coords: { latitude: 43.2593, longitude: -2.9236, accuracy: 25 } });
+    d.getElementById('locateButton').click();
+
+    const items = await until(() => d.querySelectorAll('#nearbyList button').length, 30000);
+    check('inguruko zerrenda agertzen da', items >= 10 && !d.getElementById('nearby').classList.contains('hidden'), items);
+    const distances = [...d.querySelectorAll('#nearbyList button span:last-child')].map(span => {
+        const [value, unit] = span.textContent.split(' ');
+        return parseFloat(value.replace(',', '.')) * (unit === 'km' ? 1000 : 1);
+    });
+    check('distantziaren arabera ordenatuta', distances.every((value, i) => i === 0 || value >= distances[i - 1]), distances.slice(0, 5).join(', '));
+    check('lehena 1 km baino gertuago', distances[0] < 1000, distances[0]);
+
+    // Zerrendako artikulu bat aukeratzean, txartela irekitzen da eta zerrenda ixten
+    const first = d.querySelector('#nearbyList button');
+    const title = first.querySelector('span.truncate').textContent;
+    first.click();
+    check('zerrenda ixten da aukeratzean', d.getElementById('nearby').classList.contains('hidden'));
+    const opened = await until(() => d.querySelector('.leaflet-popup-content h3')?.textContent, 30000);
+    check('aukeratutako artikuluaren txartela irekitzen da', opened === title, `${opened} / ${title}`);
+});
+</script>
+</body>
+</html>
