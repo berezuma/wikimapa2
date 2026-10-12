@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="eu">
+<head><meta charset="utf-8"><title>Service worker proba</title></head>
+<body>
+<pre id="result"></pre>
+<script type="module">
+import { run, check, sleep, loadApp } from './harness.js';
+
+const isCached = async (url) => Boolean(await (await caches.open('wikimapa-v1')).match(url));
+const waitCached = async (url, ms = 15000) => {
+    for (const start = Date.now(); Date.now() - start < ms; await sleep(200)) {
+        if (await isCached(url)) return true;
+    }
+    return false;
+};
+
+run(async () => {
+    await loadApp('?lat=43.0&lon=-2.5&zoom=9');
+    const registration = await Promise.race([navigator.serviceWorker.ready, sleep(15000)]);
+    check('service worker-a aktibo', registration?.active, registration?.active?.state);
+    check('orria cachean', await waitCached('/'));
+    check('datuak cachean', await waitCached('/data/artikuluak.json'));
+    check('modulu guztiak cachean', (await Promise.all(['app', 'nearby', 'filters'].map(name => waitCached(`/js/${name}.js`)))).every(Boolean));
+
+    // Lehen kargan service worker-a ez zen oraindik kontrolatzailea; bigarrenean CDNko liburutegiak ere gordetzen ditu
+    await loadApp('?lat=43.0&lon=-2.5&zoom=9');
+    check('Leaflet (CDN) cachean', await waitCached('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'));
+});
+</script>
+</body>
+</html>

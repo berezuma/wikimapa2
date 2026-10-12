@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['smoke.html', 'keyboard.html', 'filters.html', 'overview.html', 'delight.html', 'timeline.html', 'nearby.html'];
+const PAGES = process.argv.slice(2).length ? process.argv.slice(2) : ['smoke.html', 'keyboard.html', 'filters.html', 'overview.html', 'delight.html', 'timeline.html', 'nearby.html', 'offline.html'];
 const TIMEOUT_MS = 180000;
 
 const CONTENT_TYPES = {

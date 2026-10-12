@@ -219,7 +219,8 @@ const fetchGeosearchData = async (signal) => {
         geosearchCache = articles.length < 500 ? { bounds: queryBounds, articles } : null;
         return { articles, partial: false };
     } catch (error) {
-        if (error.code === 'toobig') return fetchLargeView();
+        // toobig: bbox handiegia. TypeError: sarerik ez (fetch); Euskal Herrian datu estatikoekin jarraitu
+        if (error.code === 'toobig' || error instanceof TypeError) return fetchLargeView();
         throw error;
     }
 };
@@ -588,3 +589,8 @@ loadMarkerGroups();
 if (urlParams.get('artikulua')) selectArticle(urlParams.get('artikulua'));
 // Euskal Herriko muga kargatu hasieran
 drawBasqueCountryBorders();
+
+// Service worker-a (sw.js): sare txarrean edo lineaz kanpo, azken bisitako aplikazioa eta datuak cachetik
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(error => console.error("Errorea service worker-a erregistratzean:", error));
+}
